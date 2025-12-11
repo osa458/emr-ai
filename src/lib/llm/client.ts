@@ -1,9 +1,16 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+let openaiClient: OpenAI | null = null
+
+function getOpenAIClient(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    })
+  }
+  return openaiClient
+}
 
 export interface LLMRequestOptions {
   systemPrompt: string
@@ -42,7 +49,7 @@ export async function llmRequest<T>(
     { role: 'user', content: userPrompt },
   ]
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model,
     messages,
     temperature,
