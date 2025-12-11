@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # PostgreSQL for Medplum
+  medplum-postgres:
+    image: postgres:15
+    container_name: emr-medplum-postgres
+    environment:
+      POSTGRES_DB: medplum
+      POSTGRES_USER: medplum
+      POSTGRES_PASSWORD: medplum_password
+    volumes:
+      - medplum_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medplum"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Medplum
+  medplum-redis:
+    image: redis:7
+    container_name: emr-medplum-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Medplum FHIR Server
+  medplum:
+    image: medplum/medplum-server:latest
+    container_name: emr-medplum-server
+    depends_on:
+      medplum-postgres:
+        condition: service_healthy
+      medplum-redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./medplum.config.json:/usr/src/medplum/medplum.config.json:ro
+      - medplum_binary_data:/usr/src/medplum/binary
+    ports:
+      - "8103:8103"
+
+  # PostgreSQL for App Data
+  app-postgres:
+    image: postgres:15
+    container_name: emr-app-postgres
+    environment:
+      POSTGRES_DB: emr_app
+      POSTGRES_USER: emr_user
+      POSTGRES_PASSWORD: emr_password
+    volumes:
+      - app_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emr_user -d emr_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  medplum_postgres_data:
+  medplum_binary_data:
+  app_postgres_data:

@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User accounts
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  role          UserRole  @default(PHYSICIAN)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  preferences   UserPreference?
+  aiInteractions AIInteraction[]
+}
+
+enum UserRole {
+  PHYSICIAN
+  NURSE
+  CODER
+  DISCHARGE_PLANNER
+  ADMIN
+}
+
+// User preferences and settings
+model UserPreference {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id])
+
+  // Dashboard preferences
+  defaultTriageView     String   @default("all")
+  defaultDischargeView  String   @default("ready_first")
+
+  // AI preferences
+  aiAssistEnabled       Boolean  @default(true)
+  showBillingSuggestions Boolean @default(true)
+
+  // UI preferences
+  sidebarCollapsed      Boolean  @default(false)
+  theme                 String   @default("system")
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// Log AI interactions for analytics (no PHI stored)
+model AIInteraction {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+
+  interactionType String   // diagnostic_assist, billing_assist, triage, discharge
+  // Store only metadata, not PHI
+  inputTokens     Int?
+  outputTokens    Int?
+  latencyMs       Int?
+  wasAccepted     Boolean?
+
+  createdAt       DateTime @default(now())
+}
+
+// Feature flags
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  enabled     Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
