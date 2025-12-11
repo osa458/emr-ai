@@ -16,11 +16,13 @@ import {
   Calendar,
   Video,
   FileEdit,
+  UserPlus,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Patients', href: '/patients', icon: Users },
+  { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
   { name: 'Appointments', href: '/appointments', icon: Calendar },
   { name: 'Telemedicine', href: '/telemedicine', icon: Video },
   { name: 'Morning Triage', href: '/triage', icon: Activity },

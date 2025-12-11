@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { User, ChevronRight, Search } from 'lucide-react'
+import { User, ChevronRight, Search, UserPlus } from 'lucide-react'
 
 // Mock patient data for demo - matches seed data
 const mockPatients = [
@@ -68,6 +68,12 @@ export default function PatientsPage() {
             {mockPatients.length} active inpatients
           </p>
         </div>
+        <Link href="/patients/admit">
+          <Button>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Admit New Patient
+          </Button>
+        </Link>
       </div>
 
       {/* Search */}
