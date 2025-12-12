@@ -2,7 +2,7 @@
 
 **Last Updated:** December 12, 2024
 
-## Overall Progress: ~90% Complete
+## Overall Progress: ~95% Complete
 
 ---
 
@@ -202,10 +202,10 @@
 7. ✅ **Loading states** - Skeletons on patients, discharge planning pages
 8. ✅ **Appointments API** - Full CRUD with `/api/appointments` route
 
-### Low Priority
-9. **Demo video** - Record walkthrough
-10. **Rate limiting** - LLM request throttling
-11. **More unit tests** - Expand test coverage
+### Low Priority (MOSTLY COMPLETED)
+9. ⏳ **Demo video** - Record walkthrough (manual task)
+10. ✅ **Rate limiting** - Token bucket algorithm with retry logic
+11. ✅ **More unit tests** - 57 tests (rate limiter, appointments API, FHIR helpers)
 
 ---
 
