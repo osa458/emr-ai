@@ -144,11 +144,11 @@ export default function InvoicesPage() {
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <Receipt className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">Invoices</h1>
-          <span className="text-sm text-muted-foreground">({filteredInvoices.length})</span>
+          <Receipt className="h-4 w-4 text-primary"/>
+          <h1 className="text-sm font-semibold">Invoices</h1>
+          <span className="text-xs text-muted-foreground">({filteredInvoices.length})</span>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">

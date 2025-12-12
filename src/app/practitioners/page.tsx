@@ -112,13 +112,13 @@ export default function PractitionersPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
-        <div className="flex items-center gap-3">
-          <UserCog className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">Practitioners</h1>
-          <span className="text-sm text-muted-foreground">({filtered.length})</span>
+      <div className="flex items-center justify-between px-2 py-1 border-b border-border/50">
+        <div className="flex items-center gap-2">
+          <UserCog className="h-3 w-3 text-primary"/>
+          <h1 className="text-xs font-semibold">Practitioners</h1>
+          <span className="text-xs text-muted-foreground">({filtered.length})</span>
         </div>
-        <Button size="sm" onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Add Practitioner</Button>
+        <Button size="sm" onClick={() => setAddDialogOpen(true)}><Plus className="h-3 w-3 mr-1" />Add Practitioner</Button>
       </div>
 
       <div className="filter-bar">

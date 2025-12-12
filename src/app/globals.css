@@ -60,15 +60,15 @@
 }
 
 @layer components {
-  /* Sharp table styling */
+  /* Sharp table styling - compact */
   .table-sharp {
-    @apply w-full text-sm;
+    @apply w-full text-xs;
   }
   .table-sharp th {
-    @apply px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-border/50;
+    @apply px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground border-b border-border/50;
   }
   .table-sharp td {
-    @apply px-4 py-3 border-b border-border/30;
+    @apply px-2 py-1.5 border-b border-border/30;
   }
   .table-sharp tr:hover td {
     @apply bg-muted/30;
@@ -79,19 +79,19 @@
     @apply bg-card border border-border/50 shadow-sm;
   }
 
-  /* Sharp input styling */
+  /* Sharp input styling - compact */
   .input-sharp {
-    @apply h-9 border border-border/60 bg-background px-3 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30;
+    @apply h-7 border border-border/60 bg-background px-2 text-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30;
   }
 
   /* Sharp button styling */
   .btn-sharp {
-    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/30;
+    @apply inline-flex items-center justify-center px-2 py-1 text-xs font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/30;
   }
 
-  /* Status badges */
+  /* Status badges - compact */
   .badge-status {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-0.5 px-1.5 py-px text-[10px] font-medium;
   }
   .badge-success {
     @apply bg-emerald-500/10 text-emerald-500 border border-emerald-500/20;
@@ -106,13 +106,13 @@
     @apply bg-blue-500/10 text-blue-500 border border-blue-500/20;
   }
 
-  /* Action links */
+  /* Action links - compact */
   .action-link {
-    @apply text-sm font-medium text-primary hover:text-primary/80 transition-colors cursor-pointer;
+    @apply text-xs font-medium text-primary hover:text-primary/80 transition-colors cursor-pointer;
   }
 
-  /* Filter bar */
+  /* Filter bar - compact */
   .filter-bar {
-    @apply flex items-center gap-3 p-3 bg-muted/30 border-b border-border/50;
+    @apply flex items-center gap-2 px-3 py-2 bg-muted/30 border-b border-border/50;
   }
 }

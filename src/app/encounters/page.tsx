@@ -114,11 +114,11 @@ export default function EncountersPage() {
 
   return (
     <div className="flex-1 flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
         <div className="flex items-center gap-3">
-          <Stethoscope className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-semibold">Encounters</h1>
-          <span className="text-sm text-muted-foreground">({filteredEncounters.length})</span>
+          <Stethoscope className="h-4 w-4 text-primary"/>
+          <h1 className="text-sm font-semibold">Encounters</h1>
+          <span className="text-xs text-muted-foreground">({filteredEncounters.length})</span>
         </div>
         <Button size="sm" onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Encounter</Button>
       </div>
