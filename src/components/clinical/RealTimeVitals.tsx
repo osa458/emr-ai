@@ -88,12 +88,20 @@ export function RealTimeVitals({
   patientId,
   refreshInterval = 30,
 }: RealTimeVitalsProps) {
-  const [vitals, setVitals] = useState<Vital[]>(generateVitals())
-  const [lastUpdate, setLastUpdate] = useState(new Date())
+  const [vitals, setVitals] = useState<Vital[]>([])
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [isLive, setIsLive] = useState(true)
+  const [mounted, setMounted] = useState(false)
+
+  // Initialize on mount to avoid hydration mismatch
+  useEffect(() => {
+    setVitals(generateVitals())
+    setLastUpdate(new Date())
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
-    if (!isLive) return
+    if (!isLive || !mounted) return
 
     const interval = setInterval(() => {
       setVitals(generateVitals())
@@ -101,7 +109,7 @@ export function RealTimeVitals({
     }, refreshInterval * 1000)
 
     return () => clearInterval(interval)
-  }, [isLive, refreshInterval])
+  }, [isLive, refreshInterval, mounted])
 
   const abnormalCount = vitals.filter(isAbnormal).length
 
@@ -135,7 +143,7 @@ export function RealTimeVitals({
           </div>
         </div>
         <div className="text-xs text-muted-foreground">
-          Last updated: {lastUpdate.toLocaleTimeString()}
+          Last updated: {lastUpdate ? lastUpdate.toLocaleTimeString() : '--:--:--'}
         </div>
       </CardHeader>
       <CardContent>
@@ -160,7 +168,7 @@ export function RealTimeVitals({
                   <TrendIcon trend={vital.trend} />
                 </div>
                 <div
-                  className={`text-2xl font-bold ${
+                  className={`text-lg font-bold ${
                     abnormal ? 'text-red-700' : ''
                   }`}
                 >

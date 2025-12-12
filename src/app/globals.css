@@ -53,25 +53,88 @@
   * {
     @apply border-border;
   }
+  
+  /* Global compact styling */
+  html {
+    font-size: 13px; /* Reduced from 16px default */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    line-height: 1.4;
+  }
+
+  /* Reduce all heading sizes and weights */
+  h1 {
+    @apply text-lg font-semibold;
+  }
+  h2 {
+    @apply text-base font-semibold;
+  }
+  h3 {
+    @apply text-sm font-medium;
+  }
+  h4, h5, h6 {
+    @apply text-xs font-medium;
+  }
+
+  /* Compact paragraphs */
+  p {
+    @apply text-sm leading-relaxed;
+  }
+
+  /* Smaller default labels */
+  label {
+    @apply text-xs font-normal text-muted-foreground;
   }
 }
 
 @layer components {
+  /* Compact card styling */
+  .card-compact {
+    @apply p-3;
+  }
+  
+  /* Override Card component defaults */
+  [class*="CardHeader"] {
+    @apply p-3 pb-2;
+  }
+  [class*="CardContent"] {
+    @apply p-3 pt-0;
+  }
+  [class*="CardTitle"] {
+    @apply text-sm font-medium;
+  }
+  [class*="CardDescription"] {
+    @apply text-xs;
+  }
+
   /* Sharp table styling - compact */
   .table-sharp {
     @apply w-full text-xs;
   }
   .table-sharp th {
-    @apply px-2 py-1.5 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground border-b border-border/50;
+    @apply px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground border-b border-border/50;
   }
   .table-sharp td {
-    @apply px-2 py-1.5 border-b border-border/30;
+    @apply px-2 py-1 border-b border-border/30;
   }
   .table-sharp tr:hover td {
     @apply bg-muted/30;
+  }
+
+  /* Override default table styling */
+  table {
+    @apply text-xs;
+  }
+  th {
+    @apply text-xs font-medium py-1.5 px-2;
+  }
+  td {
+    @apply text-xs py-1.5 px-2;
   }
 
   /* Sharp card styling */
@@ -82,6 +145,25 @@
   /* Sharp input styling - compact */
   .input-sharp {
     @apply h-7 border border-border/60 bg-background px-2 text-xs transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30;
+  }
+
+  /* Override default input/button heights */
+  input, select, textarea {
+    @apply text-xs;
+  }
+  
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="number"],
+  select {
+    @apply h-7 text-xs px-2;
+  }
+
+  /* Compact buttons */
+  button {
+    @apply text-xs;
   }
 
   /* Sharp button styling */
@@ -113,6 +195,87 @@
 
   /* Filter bar - compact */
   .filter-bar {
-    @apply flex items-center gap-2 px-3 py-2 bg-muted/30 border-b border-border/50;
+    @apply flex items-center gap-2 px-2 py-1.5 bg-muted/30 border-b border-border/50;
+  }
+
+  /* Compact tabs */
+  [role="tablist"] {
+    @apply gap-0;
+  }
+  [role="tab"] {
+    @apply text-xs px-2 py-1;
+  }
+
+  /* Compact dialogs */
+  [role="dialog"] {
+    @apply text-xs;
+  }
+
+  /* Reduce spacing in flex/grid containers */
+  .space-y-6 {
+    @apply space-y-3;
+  }
+  .space-y-4 {
+    @apply space-y-2;
+  }
+  .gap-6 {
+    @apply gap-3;
+  }
+  .gap-4 {
+    @apply gap-2;
+  }
+  .p-6 {
+    @apply p-3;
+  }
+  .p-4 {
+    @apply p-2;
+  }
+  .px-6 {
+    @apply px-3;
+  }
+  .py-6 {
+    @apply py-3;
+  }
+  .px-4 {
+    @apply px-2;
+  }
+  .py-4 {
+    @apply py-2;
+  }
+  .mb-6 {
+    @apply mb-3;
+  }
+  .mb-4 {
+    @apply mb-2;
+  }
+  .mt-6 {
+    @apply mt-3;
+  }
+  .mt-4 {
+    @apply mt-2;
+  }
+}
+
+/* Override shadcn component sizes globally */
+@layer utilities {
+  /* Compact text utilities */
+  .text-compact {
+    @apply text-xs leading-tight;
+  }
+  
+  /* Dense mode for tables */
+  .table-dense th,
+  .table-dense td {
+    @apply py-1 px-1.5 text-[11px];
+  }
+
+  /* Reduce font-bold to font-medium globally */
+  .font-bold {
+    font-weight: 500 !important;
+  }
+  
+  /* Make semibold lighter */
+  .font-semibold {
+    font-weight: 500 !important;
   }
 }

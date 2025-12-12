@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,7 +15,28 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { User, ChevronRight, Search, UserPlus } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu'
+import { User, Search, UserPlus, ChevronUp, ChevronDown, MoreHorizontal, ListPlus, ListMinus, Check } from 'lucide-react'
+import { PatientNote } from '@/components/patients/PatientNote'
+import { PatientListsSidebar } from '@/components/patients/PatientListsSidebar'
+import { getPatientNote, savePatientNote } from '@/lib/patientNotes'
+import { 
+  getPatientLists, 
+  getPatientList, 
+  addPatientToList, 
+  removePatientFromList,
+  getListsForPatient,
+  type PatientList 
+} from '@/lib/patientLists'
 
 // Mock patient data for demo - matches seed data
 const mockPatients = [
@@ -50,9 +72,19 @@ const statusColors: Record<string, string> = {
   low: 'bg-green-100 text-green-800',
 }
 
+type SortField = 'name' | 'mrn' | 'location' | 'diagnosis' | 'admitDate' | 'status' | null
+type SortDirection = 'asc' | 'desc'
+
 export default function PatientsPage() {
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [sortField, setSortField] = useState<SortField>(null)
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [selectedListId, setSelectedListId] = useState<string>('all-patients')
+  const [patientLists, setPatientLists] = useState<PatientList[]>([])
+  const [listRefreshKey, setListRefreshKey] = useState(0)
 
   // Simulate loading state
   useEffect(() => {
@@ -60,40 +92,176 @@ export default function PatientsPage() {
     return () => clearTimeout(timer)
   }, [])
 
-  const filteredPatients = mockPatients.filter(
+  // Load patient lists
+  useEffect(() => {
+    setPatientLists(getPatientLists())
+  }, [listRefreshKey])
+
+  // Load notes from localStorage
+  useEffect(() => {
+    const loadedNotes: Record<string, string> = {}
+    mockPatients.forEach((patient) => {
+      loadedNotes[patient.id] = getPatientNote(patient.id)
+    })
+    setNotes(loadedNotes)
+  }, [])
+
+  const handleNoteSave = (patientId: string, note: string) => {
+    savePatientNote(patientId, note)
+    setNotes((prev) => ({ ...prev, [patientId]: note }))
+  }
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if clicking the same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Set new field with ascending direction
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  // Get patients for selected list
+  const getListPatients = () => {
+    if (selectedListId === 'all-patients') {
+      return mockPatients
+    }
+    const list = patientLists.find((l) => l.id === selectedListId)
+    if (!list) return mockPatients
+    return mockPatients.filter((p) => list.patientIds.includes(p.id))
+  }
+
+  const listPatients = getListPatients()
+
+  const filteredPatients = listPatients.filter(
     (patient) =>
       patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       patient.mrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
       patient.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Patients</h1>
-          <p className="text-muted-foreground">
-            {mockPatients.length} active inpatients
-          </p>
-        </div>
-        <Link href="/patients/admit">
-          <Button>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Admit New Patient
-          </Button>
-        </Link>
-      </div>
+  // Calculate patient counts for each list
+  const patientCounts: Record<string, number> = {
+    all: mockPatients.length,
+  }
+  patientLists.forEach((list) => {
+    if (list.id === 'all-patients') {
+      patientCounts[list.id] = mockPatients.length
+    } else {
+      patientCounts[list.id] = mockPatients.filter((p) => 
+        list.patientIds.includes(p.id)
+      ).length
+    }
+  })
 
-      {/* Search */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search by name, MRN, or diagnosis..."
-              className="w-full rounded-md border pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
+  // Handle adding/removing patients from lists
+  const handleAddToList = (patientId: string, listId: string) => {
+    addPatientToList(listId, patientId)
+    setListRefreshKey((k) => k + 1)
+  }
+
+  const handleRemoveFromList = (patientId: string, listId: string) => {
+    removePatientFromList(listId, patientId)
+    setListRefreshKey((k) => k + 1)
+  }
+
+  // Get lists that a patient belongs to
+  const getPatientListMembership = (patientId: string): string[] => {
+    return patientLists
+      .filter((l) => l.patientIds.includes(patientId))
+      .map((l) => l.id)
+  }
+
+  // Sort patients
+  const sortedPatients = [...filteredPatients].sort((a, b) => {
+    if (!sortField) return 0
+
+    let aVal: any
+    let bVal: any
+
+    switch (sortField) {
+      case 'name':
+        aVal = a.name.toLowerCase()
+        bVal = b.name.toLowerCase()
+        break
+      case 'mrn':
+        aVal = a.mrn
+        bVal = b.mrn
+        break
+      case 'location':
+        aVal = a.location
+        bVal = b.location
+        break
+      case 'diagnosis':
+        aVal = a.diagnosis.toLowerCase()
+        bVal = b.diagnosis.toLowerCase()
+        break
+      case 'admitDate':
+        aVal = new Date(a.admitDate).getTime()
+        bVal = new Date(b.admitDate).getTime()
+        break
+      case 'status':
+        // Sort by status priority: critical > high > moderate > low
+        const statusOrder: Record<string, number> = {
+          critical: 4,
+          high: 3,
+          moderate: 2,
+          low: 1,
+        }
+        aVal = statusOrder[a.status] || 0
+        bVal = statusOrder[b.status] || 0
+        break
+      default:
+        return 0
+    }
+
+    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+    return 0
+  })
+
+  const selectedList = patientLists.find((l) => l.id === selectedListId)
+
+  return (
+    <div className="flex h-[calc(100vh-6rem)]" style={{ fontWeight: 200, fontSize: '14px' }}>
+      {/* Patient Lists Sidebar */}
+      <PatientListsSidebar
+        selectedListId={selectedListId}
+        onSelectList={setSelectedListId}
+        patientCounts={patientCounts}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">
+              {selectedList?.name || 'All Patients'}
+            </h1>
+            <p className="text-muted-foreground">
+              {filteredPatients.length} {filteredPatients.length === 1 ? 'patient' : 'patients'}
+              {selectedList?.description && ` • ${selectedList.description}`}
+            </p>
+          </div>
+          <Link href="/patients/admit">
+            <Button>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Admit New Patient
+            </Button>
+          </Link>
+        </div>
+
+        {/* Search */}
+        <Card>
+          <CardContent className="py-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search by name, MRN, or diagnosis..."
+                className="w-full rounded-md border pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
@@ -105,13 +273,100 @@ export default function PatientsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Patient</TableHead>
-              <TableHead>MRN</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Diagnosis</TableHead>
-              <TableHead>Admit Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead><span className="sr-only">Actions</span></TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('name')}
+              >
+                <div className="flex items-center gap-1">
+                  Patient
+                  {sortField === 'name' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('mrn')}
+              >
+                <div className="flex items-center gap-1">
+                  MRN
+                  {sortField === 'mrn' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('location')}
+              >
+                <div className="flex items-center gap-1">
+                  Location
+                  {sortField === 'location' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('diagnosis')}
+              >
+                <div className="flex items-center gap-1">
+                  Diagnosis
+                  {sortField === 'diagnosis' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('admitDate')}
+              >
+                <div className="flex items-center gap-1">
+                  Admit Date
+                  {sortField === 'admitDate' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead 
+                className="cursor-pointer hover:bg-muted/50 select-none"
+                onClick={() => handleSort('status')}
+              >
+                <div className="flex items-center gap-1">
+                  Status
+                  {sortField === 'status' && (
+                    sortDirection === 'asc' ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )
+                  )}
+                </div>
+              </TableHead>
+              <TableHead>Notes</TableHead>
+              <TableHead className="w-[50px]">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -133,34 +388,41 @@ export default function PatientsPage() {
                   <TableCell><Skeleton className="h-4 w-40" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-16 rounded-full" /></TableCell>
-                  <TableCell><Skeleton className="h-8 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-8 w-8 rounded" /></TableCell>
                 </TableRow>
               ))
             ) : filteredPatients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  No patients found matching "{searchTerm}"
+                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                  {searchTerm 
+                    ? `No patients found matching "${searchTerm}"`
+                    : 'No patients in this list. Add patients using the actions menu.'}
                 </TableCell>
               </TableRow>
-            ) : filteredPatients.map((patient) => (
-              <TableRow key={patient.id}>
+            ) : sortedPatients.map((patient) => (
+              <TableRow 
+                key={patient.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => router.push(`/patients/${patient.id}`)}
+              >
                 <TableCell>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3" style={{ fontSize: '12px' }}>
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
                       <User className="h-5 w-5 text-slate-600" />
                     </div>
                     <div>
-                      <div className="font-medium">{patient.name}</div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-xs font-medium">{patient.name}</div>
+                      <div className="text-xs font-medium text-muted-foreground">
                         {patient.age}y {patient.gender === 'male' ? 'M' : 'F'}
                       </div>
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>{patient.mrn}</TableCell>
-                <TableCell>{patient.location}</TableCell>
-                <TableCell>{patient.diagnosis}</TableCell>
-                <TableCell>
+                <TableCell className="text-xs font-medium">{patient.mrn}</TableCell>
+                <TableCell className="text-xs font-medium">{patient.location}</TableCell>
+                <TableCell className="text-xs font-medium">{patient.diagnosis}</TableCell>
+                <TableCell className="text-xs font-medium">
                   {new Date(patient.admitDate).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
@@ -168,19 +430,88 @@ export default function PatientsPage() {
                     {patient.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <Link href={`/patients/${patient.id}`}>
-                    <Button variant="ghost" size="sm">
-                      View
-                      <ChevronRight className="ml-1 h-4 w-4" />
-                    </Button>
-                  </Link>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2">
+                    <PatientNote
+                      patientId={patient.id}
+                      initialNote={notes[patient.id] || ''}
+                      onSave={(note) => handleNoteSave(patient.id, note)}
+                      position="above"
+                    />
+                  </div>
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Open menu</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <ListPlus className="h-4 w-4 mr-2" />
+                          Add to list
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent>
+                          {patientLists
+                            .filter((l) => !l.isDefault || l.id !== 'all-patients')
+                            .map((list) => {
+                              const isInList = list.patientIds.includes(patient.id)
+                              return (
+                                <DropdownMenuItem
+                                  key={list.id}
+                                  onClick={() => handleAddToList(patient.id, list.id)}
+                                  disabled={isInList}
+                                >
+                                  <div
+                                    className="h-3 w-3 rounded mr-2"
+                                    style={{ backgroundColor: list.color }}
+                                  />
+                                  {list.name}
+                                  {isInList && <Check className="h-4 w-4 ml-auto" />}
+                                </DropdownMenuItem>
+                              )
+                            })}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                      {getPatientListMembership(patient.id).length > 0 && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <ListMinus className="h-4 w-4 mr-2" />
+                              Remove from list
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              {patientLists
+                                .filter((l) => l.patientIds.includes(patient.id) && l.id !== 'all-patients')
+                                .map((list) => (
+                                  <DropdownMenuItem
+                                    key={list.id}
+                                    onClick={() => handleRemoveFromList(patient.id, list.id)}
+                                  >
+                                    <div
+                                      className="h-3 w-3 rounded mr-2"
+                                      style={{ backgroundColor: list.color }}
+                                    />
+                                    {list.name}
+                                  </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Card>
+      </div>
     </div>
   )
 }
