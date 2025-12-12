@@ -752,21 +752,49 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         {isCreating && useSmartBuilder ? (
           <SOAPNoteEditor 
             patientId={patientId}
+            existingNote={selectedNote ? {
+              id: selectedNote.id,
+              content: selectedNote.content,
+              type: selectedNote.type,
+              service: selectedNote.service,
+              status: selectedNote.status,
+            } : undefined}
             onSave={(note, status) => {
-              const newNoteObj: Note = {
-                id: `note-${Date.now()}`,
-                type: note.type,
-                service: note.service,
-                title: `${note.type} - ${note.service}`,
-                author: currentUser.name,
-                authorRole: currentUser.role,
-                date: new Date(),
-                content: note.content,
-                status,
-                versions: [{ id: 'v-1', content: note.content, author: currentUser.name, date: new Date(), action: 'created' }],
+              if (selectedNote) {
+                // Editing existing note
+                const updatedNote: Note = {
+                  ...selectedNote,
+                  type: note.type,
+                  service: note.service,
+                  title: `${note.type} - ${note.service}`,
+                  content: note.content,
+                  status,
+                  isSmartNote: true,
+                  versions: [
+                    ...(selectedNote.versions || []),
+                    { id: `v-${Date.now()}`, content: note.content, author: currentUser.name, date: new Date(), action: 'edited' }
+                  ],
+                }
+                setNotes(notes.map(n => n.id === selectedNote.id ? updatedNote : n))
+                setSelectedNote(updatedNote)
+              } else {
+                // Creating new note
+                const newNoteObj: Note = {
+                  id: `note-${Date.now()}`,
+                  type: note.type,
+                  service: note.service,
+                  title: `${note.type} - ${note.service}`,
+                  author: currentUser.name,
+                  authorRole: currentUser.role,
+                  date: new Date(),
+                  content: note.content,
+                  status,
+                  isSmartNote: true,
+                  versions: [{ id: 'v-1', content: note.content, author: currentUser.name, date: new Date(), action: 'created' }],
+                }
+                setNotes([newNoteObj, ...notes])
+                setSelectedNote(newNoteObj)
               }
-              setNotes([newNoteObj, ...notes])
-              setSelectedNote(newNoteObj)
               setIsCreating(false)
             }}
             onCancel={handleCancelCreate}

@@ -53,8 +53,17 @@ import {
   ShoppingCart,
 } from 'lucide-react'
 
+interface ExistingNote {
+  id: string
+  content: string
+  type: string
+  service: string
+  status: 'draft' | 'pended' | 'signed'
+}
+
 interface SOAPNoteEditorProps {
   patientId: string
+  existingNote?: ExistingNote
   onSave: (note: { type: string; service: string; content: string; billingCodes?: string[] }, status: 'draft' | 'pended' | 'signed') => void
   onCancel: () => void
 }
@@ -818,7 +827,7 @@ function TrendIcon({ trend }: { trend: number[] }) {
   return <Minus className="h-3 w-3 text-gray-400" />
 }
 
-export function SOAPNoteEditor({ patientId, onSave, onCancel }: SOAPNoteEditorProps) {
+export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SOAPNoteEditorProps) {
   const [showPreview, setShowPreview] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [showBilling, setShowBilling] = useState(false)
@@ -939,8 +948,19 @@ export function SOAPNoteEditor({ patientId, onSave, onCancel }: SOAPNoteEditorPr
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [findPlaceholderPositions])
   
-  // Form state
-  const [subjective, setSubjective] = useState('Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.')
+  // Parse existing note content to extract subjective section
+  const parseExistingSubjective = (content: string): string => {
+    const subjectiveMatch = content.match(/SUBJECTIVE[:\s]*\n?([\s\S]*?)(?=\n\s*OBJECTIVE|\n\s*$)/i)
+    return subjectiveMatch ? subjectiveMatch[1].trim() : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
+  }
+  
+  // Form state - initialize from existingNote if provided
+  const [subjective, setSubjective] = useState(() => 
+    existingNote?.content ? parseExistingSubjective(existingNote.content) : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
+  )
+  
+  // Store original content for re-editing
+  const [originalContent, setOriginalContent] = useState<string | null>(existingNote?.content || null)
   const [uop, setUop] = useState({ intake: 1200, output: 2400, net: -1200 })
   const [exam, setExam] = useState({
     general: 'Alert, oriented, NAD',

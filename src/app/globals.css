@@ -23,7 +23,7 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --radius: 0px;
   }
 
   .dark {
@@ -76,22 +76,22 @@
 
   /* Sharp card styling */
   .card-sharp {
-    @apply bg-card border border-border/50 rounded-lg shadow-sm;
+    @apply bg-card border border-border/50 shadow-sm;
   }
 
   /* Sharp input styling */
   .input-sharp {
-    @apply h-9 rounded-md border border-border/60 bg-background px-3 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30;
+    @apply h-9 border border-border/60 bg-background px-3 text-sm transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30;
   }
 
   /* Sharp button styling */
   .btn-sharp {
-    @apply inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/30;
+    @apply inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/30;
   }
 
   /* Status badges */
   .badge-status {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
   }
   .badge-success {
     @apply bg-emerald-500/10 text-emerald-500 border border-emerald-500/20;
