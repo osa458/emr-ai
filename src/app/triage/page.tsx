@@ -69,7 +69,7 @@ export default function MorningTriagePage() {
 
       {/* Summary Cards */}
       {triage && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <SummaryCard
             title="Total Patients"
             value={triage.totalPatients}
@@ -223,13 +223,13 @@ function SummaryCard({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-4 p-4">
-        <div className={`rounded-full bg-gray-100 p-3 ${className}`}>
-          <Icon className="h-6 w-6" />
+      <CardContent className="flex items-center gap-3 md:gap-4 p-3 md:p-4">
+        <div className={`rounded-full bg-gray-100 p-2 md:p-3 ${className}`} aria-hidden="true">
+          <Icon className="h-5 w-5 md:h-6 md:w-6" />
         </div>
         <div>
-          <div className="text-2xl font-bold">{value}</div>
-          <div className="text-sm text-muted-foreground">{title}</div>
+          <div className="text-xl md:text-2xl font-bold" aria-label={`${value} ${title}`}>{value}</div>
+          <div className="text-xs md:text-sm text-muted-foreground">{title}</div>
         </div>
       </CardContent>
     </Card>

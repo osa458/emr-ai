@@ -1,9 +1,11 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -95,6 +97,13 @@ const readinessConfig: Record<
 }
 
 export default function DischargePlanningPage() {
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 600)
+    return () => clearTimeout(timer)
+  }, [])
+
   const readyToday = mockPatients.filter((p) => p.readiness === 'READY_TODAY').length
   const readySoon = mockPatients.filter((p) => p.readiness === 'READY_SOON').length
   const notReady = mockPatients.filter((p) => p.readiness === 'NOT_READY').length
@@ -109,7 +118,7 @@ export default function DischargePlanningPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="border-green-200 bg-green-50">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -171,7 +180,21 @@ export default function DischargePlanningPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {mockPatients.map((patient) => {
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-8 w-16" /></TableCell>
+                </TableRow>
+              ))
+            ) : mockPatients.map((patient) => {
               const config = readinessConfig[patient.readiness]
               const Icon = config.icon
 
