@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,8 @@ import { NotesPanel } from '@/components/chart/NotesPanel'
 import { OrdersPanel } from '@/components/chart/OrdersPanel'
 import { AISidebar } from '@/components/ai/AISidebar'
 import { TextSelectionPopover } from '@/components/ai/TextSelectionPopover'
+import { PatientStickyNote } from '@/components/patients/PatientStickyNote'
+import { PatientChartLayout } from '@/components/chart-mode/PatientChartLayout'
 import type { Observation, MedicationRequest, MedicationStatement, DiagnosticReport } from '@medplum/fhirtypes'
 
 // Helper to generate dates
@@ -315,11 +317,79 @@ const getMockPatient = (id: string) => ({
   ],
 })
 
+// Enhanced patient data for the 2025 chart layout
+const getEnhancedPatientData = (patient: ReturnType<typeof getMockPatient>) => ({
+  id: patient.id,
+  name: patient.name,
+  age: patient.age,
+  gender: patient.gender,
+  mrn: patient.mrn,
+  location: patient.location,
+  admitDate: patient.admitDate,
+  photo: undefined,
+  codeStatus: 'Full' as const,
+  isolation: undefined,
+  fallRisk: 'Moderate' as const,
+  allergies: [
+    { name: 'Penicillin', severity: 'high' as const, reaction: 'Anaphylaxis' },
+    { name: 'Sulfa', severity: 'moderate' as const, reaction: 'Rash' },
+  ],
+  problems: patient.conditions.map((c) => c.name),
+  keyLabs: [
+    { name: 'Cr', value: '1.4', unit: 'mg/dL', status: 'high' as const, trend: 'down' as const },
+    { name: 'K', value: '4.2', unit: 'mEq/L', status: 'normal' as const },
+    { name: 'BNP', value: '850', unit: 'pg/mL', status: 'high' as const, trend: 'down' as const },
+    { name: 'Hgb', value: '11.2', unit: 'g/dL', status: 'low' as const },
+    { name: 'Na', value: '138', unit: 'mEq/L', status: 'normal' as const },
+    { name: 'WBC', value: '9.8', unit: '10³/µL', status: 'normal' as const },
+  ],
+  cultures: [
+    { type: 'Blood Cx', status: 'pending' as const },
+    { type: 'Urine Cx', status: 'negative' as const, result: 'No growth' },
+  ],
+  imaging: [
+    { type: 'CXR', date: '12/11', finding: 'Pulmonary edema improving' },
+    { type: 'Echo', date: '12/10', finding: 'EF 35%, moderate MR' },
+    { type: 'CT Chest', date: '12/09', finding: 'No PE, bilateral effusions' },
+  ],
+  medications: patient.medications.length,
+  vitals: {
+    bp: '128/76',
+    hr: 72,
+    temp: '98.6°F',
+    spo2: 96,
+    rr: 16,
+  },
+  io: {
+    input: 2100,
+    output: 2800,
+  },
+  attendingPhysician: patient.attending,
+  diagnosis: patient.conditions.map((c) => c.name),
+  keyUpdates: [
+    'BNP trending down (1250 → 850)',
+    'Weight decreased 2 lbs with diuresis',
+    'Tolerating PO medications',
+    'O2 weaned to 2L NC',
+  ],
+  overnightTasks: [
+    'Daily weight at 6am',
+    'Strict I/O monitoring',
+    'Recheck BMP in AM',
+    'Call if SOB worsens or SpO2 < 92%',
+  ],
+})
+
 export default function PatientChartPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const patientId = params.patientId as string
   const patient = getMockPatient(patientId)
+  const enhancedPatient = getEnhancedPatientData(patient)
   const [isAISidebarOpen, setIsAISidebarOpen] = useState(false)
+
+  // Get tab from URL if specified (for command palette navigation)
+  const defaultTab = searchParams.get('tab') || 'overview'
 
   const handleTextAnalyze = (text: string) => {
     setIsAISidebarOpen(true)
@@ -337,95 +407,40 @@ export default function PatientChartPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Back button */}
-      <Link href="/patients">
-        <Button variant="ghost" size="sm">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Patients
-        </Button>
-      </Link>
-
-      {/* Patient Banner */}
-      <Card className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-        <CardContent className="py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
-                <User className="h-8 w-8" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">{patient.name}</h1>
-                <div className="flex items-center space-x-4 text-blue-100">
-                  <span>{patient.age} years old</span>
-                  <span>•</span>
-                  <span className="capitalize">{patient.gender}</span>
-                  <span>•</span>
-                  <span>MRN: {patient.mrn}</span>
-                </div>
-              </div>
-            </div>
-            <div className="text-right flex items-start gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setIsAISidebarOpen(!isAISidebarOpen)}
-                className={isAISidebarOpen ? 'bg-purple-100 text-purple-700' : ''}
-              >
-                <Sparkles className="h-4 w-4 mr-1" />
-                AI Assist
-              </Button>
-              <div>
-                <Badge variant="secondary" className="mb-2">
-                  Inpatient
-                </Badge>
-                <div className="text-sm text-blue-100">
-                  <div className="flex items-center justify-end">
-                    <Calendar className="mr-1 h-4 w-4" />
-                    Admitted: {new Date(patient.admitDate).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center justify-end">
-                    <MapPin className="mr-1 h-4 w-4" />
-                    {patient.location}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
+    <PatientChartLayout patient={enhancedPatient}>
       {/* Navigation Tabs */}
-      <Tabs defaultValue="overview">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="vitals">Vitals</TabsTrigger>
-          <TabsTrigger value="labs">Labs</TabsTrigger>
-          <TabsTrigger value="medications">Medications</TabsTrigger>
-          <TabsTrigger value="imaging" className="flex items-center gap-1">
-            <ImageIcon className="h-4 w-4" />
-            Imaging
-          </TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
-          <TabsTrigger value="orders" className="flex items-center gap-1">
-            <ClipboardList className="h-4 w-4" />
-            Orders
-          </TabsTrigger>
-          <TabsTrigger value="diagnostic" className="flex items-center gap-1">
-            <Stethoscope className="h-4 w-4" />
-            AI Diagnostic
-          </TabsTrigger>
-          <TabsTrigger value="billing" className="flex items-center gap-1">
-            <DollarSign className="h-4 w-4" />
-            Billing
-          </TabsTrigger>
-          <Link href={`/patients/${patientId}/discharge`}>
-            <TabsTrigger value="discharge" className="flex items-center gap-1">
-              <ClipboardCheck className="h-4 w-4" />
-              Discharge
+      <Tabs defaultValue={defaultTab}>
+        <div className="overflow-x-auto">
+          <TabsList className="inline-flex flex-nowrap">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="vitals">Vitals</TabsTrigger>
+            <TabsTrigger value="labs">Labs</TabsTrigger>
+            <TabsTrigger value="medications">Medications</TabsTrigger>
+            <TabsTrigger value="imaging" className="flex items-center gap-1">
+              <ImageIcon className="h-4 w-4" />
+              Imaging
             </TabsTrigger>
-          </Link>
-        </TabsList>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="orders" className="flex items-center gap-1">
+              <ClipboardList className="h-4 w-4" />
+              Orders
+            </TabsTrigger>
+            <TabsTrigger value="diagnostic" className="flex items-center gap-1">
+              <Stethoscope className="h-4 w-4" />
+              AI Diagnostic
+            </TabsTrigger>
+            <TabsTrigger value="billing" className="flex items-center gap-1">
+              <DollarSign className="h-4 w-4" />
+              Billing
+            </TabsTrigger>
+            <Link href={`/patients/${patientId}/discharge`}>
+              <TabsTrigger value="discharge" className="flex items-center gap-1">
+                <ClipboardCheck className="h-4 w-4" />
+                Discharge
+              </TabsTrigger>
+            </Link>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
@@ -595,6 +610,6 @@ export default function PatientChartPage() {
         onDefine={handleTextDefine}
         onSearch={handleTextSearch}
       />
-    </div>
+    </PatientChartLayout>
   )
 }
