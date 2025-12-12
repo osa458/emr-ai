@@ -11,6 +11,15 @@ import {
   Monitor, MessageSquare, FileText, Users, Clock,
   Settings, Maximize2, Minimize2, Camera, Sparkles, Shield
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 
 interface TelemedicineSession {
   id: string
@@ -62,8 +71,12 @@ export default function TelemedicinePage() {
   const [showChat, setShowChat] = useState(false)
   const [chatMessages, setChatMessages] = useState<{ sender: string; message: string; time: Date }[]>([])
   const [newMessage, setNewMessage] = useState('')
+  const [sessions, setSessions] = useState<TelemedicineSession[]>(mockSessions)
+  const [showInstantVisit, setShowInstantVisit] = useState(false)
+  const [instantPatient, setInstantPatient] = useState({ name: '', reason: '' })
 
   const startSession = (session: TelemedicineSession) => {
+    setSessions(prev => prev.map(s => s.id === session.id ? { ...s, status: 'in-progress' as const } : s))
     setActiveSession({ ...session, status: 'in-progress' })
   }
 
@@ -105,6 +118,26 @@ export default function TelemedicinePage() {
     if (mins < 60) return `In ${mins} min`
     return `In ${Math.floor(mins / 60)}h ${mins % 60}m`
   }
+
+  const handleInstantVisit = () => {
+    if (instantPatient.name) {
+      const newSession: TelemedicineSession = {
+        id: `tele-${Date.now()}`,
+        patientName: instantPatient.name,
+        patientId: `patient-${Date.now()}`,
+        scheduledTime: new Date(),
+        status: 'in-progress',
+        type: 'video',
+        reason: instantPatient.reason || 'Instant visit'
+      }
+      setSessions(prev => [newSession, ...prev])
+      setActiveSession(newSession)
+      setShowInstantVisit(false)
+      setInstantPatient({ name: '', reason: '' })
+    }
+  }
+
+  const waitingSessions = sessions.filter(s => s.status === 'waiting')
 
   return (
     <div className="container mx-auto py-6">
@@ -320,11 +353,11 @@ export default function TelemedicinePage() {
                   <Users className="h-4 w-4" />
                   Waiting Room
                 </span>
-                <Badge>{mockSessions.filter(s => s.status === 'waiting').length}</Badge>
+                <Badge>{waitingSessions.length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {mockSessions.filter(s => s.status === 'waiting').map(session => (
+              {waitingSessions.map(session => (
                 <div
                   key={session.id}
                   className="p-3 border rounded-lg hover:bg-slate-50 cursor-pointer"
@@ -344,7 +377,7 @@ export default function TelemedicinePage() {
                 </div>
               ))}
               
-              {mockSessions.filter(s => s.status === 'waiting').length === 0 && (
+              {waitingSessions.length === 0 && (
                 <div className="text-center text-muted-foreground py-4 text-sm">
                   No patients waiting
                 </div>
@@ -358,11 +391,14 @@ export default function TelemedicinePage() {
               <CardTitle className="text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button variant="outline" className="w-full justify-start" size="sm" onClick={() => setShowInstantVisit(true)}>
                 <Video className="h-4 w-4 mr-2" />
                 Start Instant Visit
               </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
+              <Button variant="outline" className="w-full justify-start" size="sm" onClick={() => {
+                setInstantPatient({ name: '', reason: '' })
+                setShowInstantVisit(true)
+              }}>
                 <Phone className="h-4 w-4 mr-2" />
                 Make Phone Call
               </Button>
@@ -374,6 +410,44 @@ export default function TelemedicinePage() {
           </Card>
         </div>
       </div>
+
+      {/* Instant Visit Dialog */}
+      <Dialog open={showInstantVisit} onOpenChange={setShowInstantVisit}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Start Instant Visit</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="patient-name" className="text-right">Patient</Label>
+              <Input
+                id="patient-name"
+                value={instantPatient.name}
+                onChange={(e) => setInstantPatient(prev => ({ ...prev, name: e.target.value }))}
+                className="col-span-3"
+                placeholder="Patient name"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="visit-reason" className="text-right">Reason</Label>
+              <Input
+                id="visit-reason"
+                value={instantPatient.reason}
+                onChange={(e) => setInstantPatient(prev => ({ ...prev, reason: e.target.value }))}
+                className="col-span-3"
+                placeholder="Visit reason (optional)"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInstantVisit(false)}>Cancel</Button>
+            <Button onClick={handleInstantVisit} disabled={!instantPatient.name}>
+              <Video className="h-4 w-4 mr-2" />
+              Start Visit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

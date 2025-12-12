@@ -247,6 +247,23 @@ export default function AdminFormsPage() {
     setSelectedForm(null)
   }
 
+  const handleDeleteForm = (formId: string) => {
+    if (confirm('Are you sure you want to delete this form?')) {
+      setForms(prev => prev.filter(f => f.id !== formId))
+    }
+  }
+
+  const handleDuplicateForm = (form: Questionnaire) => {
+    const duplicate: Questionnaire = {
+      ...form,
+      id: `form-${Date.now()}`,
+      title: `${form.title} (Copy)`,
+      status: 'draft',
+      date: new Date().toISOString().split('T')[0]
+    }
+    setForms(prev => [...prev, duplicate])
+  }
+
   const handleGenerateAIForm = async (templateKey: string) => {
     setIsGenerating(true)
     // Simulate AI generation delay
@@ -413,10 +430,10 @@ export default function AdminFormsPage() {
                       <Button variant="ghost" size="sm" onClick={() => handleEditForm(form)} title="Edit">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" title="Duplicate">
+                      <Button variant="ghost" size="sm" title="Duplicate" onClick={() => handleDuplicateForm(form)}>
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-red-600" title="Delete">
+                      <Button variant="ghost" size="sm" className="text-red-600" title="Delete" onClick={() => handleDeleteForm(form.id!)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>

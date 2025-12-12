@@ -123,6 +123,9 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<CalendarEvent[]>(mockAppointments)
   const [newAppointment, setNewAppointment] = useState<NewAppointmentForm>(initialFormState)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '' })
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedAppointment(event)
@@ -161,6 +164,70 @@ export default function AppointmentsPage() {
     setAppointments(prev => [...prev, newApt])
     setShowNewAppointment(false)
     setNewAppointment(initialFormState)
+  }
+
+  const handleReschedule = () => {
+    if (selectedAppointment) {
+      const aptDate = new Date(selectedAppointment.start)
+      setRescheduleForm({
+        date: aptDate.toISOString().split('T')[0],
+        time: aptDate.toTimeString().slice(0, 5)
+      })
+      setRescheduleDialogOpen(true)
+    }
+  }
+
+  const handleConfirmReschedule = () => {
+    if (selectedAppointment && rescheduleForm.date && rescheduleForm.time) {
+      const newStart = new Date(`${rescheduleForm.date}T${rescheduleForm.time}`)
+      const startVal = selectedAppointment.start
+      const endVal = selectedAppointment.end
+      const oldStart = startVal instanceof Date ? startVal : new Date(startVal as string)
+      const oldEnd = endVal ? (endVal instanceof Date ? endVal : new Date(endVal as string)) : new Date(oldStart.getTime() + 30 * 60000)
+      const duration = oldEnd.getTime() - oldStart.getTime()
+      const newEnd = new Date(newStart.getTime() + duration)
+      
+      setAppointments(prev => prev.map(apt => 
+        apt.id === selectedAppointment.id 
+          ? { ...apt, start: newStart, end: newEnd }
+          : apt
+      ))
+      setSelectedAppointment({ ...selectedAppointment, start: newStart, end: newEnd })
+      setRescheduleDialogOpen(false)
+    }
+  }
+
+  const handleCancelAppointment = () => {
+    setCancelDialogOpen(true)
+  }
+
+  const handleConfirmCancel = () => {
+    if (selectedAppointment) {
+      setAppointments(prev => prev.map(apt => 
+        apt.id === selectedAppointment.id 
+          ? { ...apt, extendedProps: { ...apt.extendedProps, status: 'cancelled' } }
+          : apt
+      ))
+      setSelectedAppointment({ 
+        ...selectedAppointment, 
+        extendedProps: { ...selectedAppointment.extendedProps, status: 'cancelled' } 
+      })
+      setCancelDialogOpen(false)
+    }
+  }
+
+  const handleCheckIn = () => {
+    if (selectedAppointment) {
+      setAppointments(prev => prev.map(apt => 
+        apt.id === selectedAppointment.id 
+          ? { ...apt, extendedProps: { ...apt.extendedProps, status: 'arrived' } }
+          : apt
+      ))
+      setSelectedAppointment({ 
+        ...selectedAppointment, 
+        extendedProps: { ...selectedAppointment.extendedProps, status: 'arrived' } 
+      })
+    }
   }
 
   // Stats
@@ -324,20 +391,34 @@ export default function AppointmentsPage() {
                   </div>
                 )}
                 
-                <div className="flex gap-2 pt-2">
-                  {selectedAppointment.extendedProps?.type === 'telemedicine' ? (
-                    <Button size="sm" className="flex-1">
-                      <Video className="h-4 w-4 mr-1" />
-                      Start Video
-                    </Button>
+                <div className="flex gap-2 pt-2 flex-wrap">
+                  {selectedAppointment.extendedProps?.status === 'cancelled' ? (
+                    <Badge variant="destructive">Cancelled</Badge>
                   ) : (
-                    <Button size="sm" className="flex-1">
-                      Check In
-                    </Button>
+                    <>
+                      {selectedAppointment.extendedProps?.type === 'telemedicine' ? (
+                        <Button size="sm" className="flex-1">
+                          <Video className="h-4 w-4 mr-1" />
+                          Start Video
+                        </Button>
+                      ) : selectedAppointment.extendedProps?.status === 'arrived' ? (
+                        <Button size="sm" className="flex-1" variant="secondary">
+                          <User className="h-4 w-4 mr-1" />
+                          Checked In
+                        </Button>
+                      ) : (
+                        <Button size="sm" className="flex-1" onClick={handleCheckIn}>
+                          Check In
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={handleReschedule}>
+                        Reschedule
+                      </Button>
+                      <Button variant="destructive" size="sm" onClick={handleCancelAppointment}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </>
                   )}
-                  <Button variant="outline" size="sm">
-                    Reschedule
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -464,6 +545,62 @@ export default function AppointmentsPage() {
             <Button onClick={handleCreateAppointment} disabled={!newAppointment.patientName}>
               Create Appointment
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reschedule Dialog */}
+      <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Reschedule Appointment</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              {selectedAppointment?.extendedProps?.patientName} - {selectedAppointment?.extendedProps?.type}
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="reschedule-date" className="text-right">Date</Label>
+              <Input
+                id="reschedule-date"
+                type="date"
+                value={rescheduleForm.date}
+                onChange={(e) => setRescheduleForm(prev => ({ ...prev, date: e.target.value }))}
+                className="col-span-3"
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="reschedule-time" className="text-right">Time</Label>
+              <Input
+                id="reschedule-time"
+                type="time"
+                value={rescheduleForm.time}
+                onChange={(e) => setRescheduleForm(prev => ({ ...prev, time: e.target.value }))}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmReschedule}>Confirm Reschedule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Cancel Appointment</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to cancel the appointment for <strong>{selectedAppointment?.extendedProps?.patientName}</strong>?
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>No, Keep It</Button>
+            <Button variant="destructive" onClick={handleConfirmCancel}>Yes, Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
