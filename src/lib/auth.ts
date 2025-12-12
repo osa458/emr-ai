@@ -1,6 +1,16 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
+// HIPAA Configuration - import dynamically to avoid circular deps
+const getHIPAAConfig = async () => {
+  try {
+    const { HIPAA_CONFIG } = await import('./hipaa/config')
+    return HIPAA_CONFIG
+  } catch {
+    return null
+  }
+}
+
 // Demo users for local development
 const demoUsers = [
   {
@@ -85,8 +95,41 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
+    // HIPAA: Session timeout (15 minutes default)
+    maxAge: parseInt(process.env.HIPAA_SESSION_TIMEOUT || '900'),
+  },
+  // HIPAA: Secure cookie settings
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' ? '__Secure-next-auth.session-token' : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
   },
   secret: process.env.NEXTAUTH_SECRET || 'development-secret-change-in-production',
+  events: {
+    // HIPAA: Audit login events
+    async signIn({ user }) {
+      try {
+        const { auditLog } = await import('./hipaa/audit')
+        await auditLog.logAuth('LOGIN', user.id, { email: user.email })
+      } catch (e) {
+        console.log('[AUTH] Audit log not available:', e)
+      }
+    },
+    async signOut({ token }) {
+      try {
+        const { auditLog } = await import('./hipaa/audit')
+        await auditLog.logAuth('LOGOUT', token?.id as string)
+      } catch (e) {
+        console.log('[AUTH] Audit log not available:', e)
+      }
+    },
+  },
 }
 
 // Role-based access helpers
