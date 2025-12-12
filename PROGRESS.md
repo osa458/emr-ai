@@ -2,7 +2,7 @@
 
 **Last Updated:** December 12, 2024
 
-## Overall Progress: ~85% Complete
+## Overall Progress: ~90% Complete
 
 ---
 
@@ -196,11 +196,11 @@
 3. ✅ **Add /api/ai/summarize** - Clinical summaries and handoff notes
 4. ✅ **Expand seed data** - 23 patients with comprehensive clinical data
 
-### Medium Priority
-5. **Mobile responsiveness** - Improve for tablet/mobile
-6. **Accessibility** - ARIA labels, keyboard nav
-7. **Loading states** - Skeletons on all pages
-8. **Appointments API** - Full CRUD for scheduling
+### Medium Priority (COMPLETED)
+5. ✅ **Mobile responsiveness** - Responsive sidebar, mobile menu, adaptive grids
+6. ✅ **Accessibility** - ARIA labels, skip links, keyboard nav, screen reader support
+7. ✅ **Loading states** - Skeletons on patients, discharge planning pages
+8. ✅ **Appointments API** - Full CRUD with `/api/appointments` route
 
 ### Low Priority
 9. **Demo video** - Record walkthrough
