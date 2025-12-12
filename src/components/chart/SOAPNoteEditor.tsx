@@ -954,6 +954,53 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     return subjectiveMatch ? subjectiveMatch[1].trim() : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
   }
   
+  // Parse existing note content to extract A/P section problems
+  const parseExistingAP = (content: string): APRecommendation[] => {
+    const apMatch = content.match(/ASSESSMENT\s*[&]\s*PLAN[:\s]*\n([\s\S]*?)(?=\n\s*DIET:|\n\s*PROPHYLAXIS:|\n\s*DISPOSITION:|\n\s*$)/i)
+    if (!apMatch) return []
+    
+    const apContent = apMatch[1]
+    const problems: APRecommendation[] = []
+    
+    // Match numbered problems like "1. Problem Name"
+    const problemMatches = apContent.matchAll(/(\d+)\.\s*([^\n]+)\n([\s\S]*?)(?=\n\d+\.|$)/g)
+    
+    for (const match of problemMatches) {
+      const problemName = match[2].trim()
+      const problemContent = match[3]
+      
+      // Extract recommendations (lines starting with -)
+      const recMatches = problemContent.matchAll(/\s+-\s*([^\n]+)/g)
+      const recs: string[] = []
+      for (const recMatch of recMatches) {
+        recs.push(recMatch[1].trim())
+      }
+      
+      // Extract supporting data if present
+      const dataMatch = problemContent.match(/Data:\s*([^\n]+)/i)
+      const supportingData: SupportingData[] = []
+      if (dataMatch) {
+        const dataParts = dataMatch[1].split(',').map(d => d.trim())
+        dataParts.forEach(part => {
+          const [label, value] = part.split(':').map(p => p.trim())
+          if (label && value) {
+            supportingData.push({ type: 'lab', label, value })
+          }
+        })
+      }
+      
+      problems.push({
+        id: `parsed-${problems.length + 1}`,
+        problem: problemName,
+        supportingData,
+        recommendations: recs,
+        status: 'accepted', // Mark as accepted since they were already in the saved note
+      })
+    }
+    
+    return problems
+  }
+  
   // Form state - initialize from existingNote if provided
   const [subjective, setSubjective] = useState(() => 
     existingNote?.content ? parseExistingSubjective(existingNote.content) : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
@@ -961,6 +1008,9 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   
   // Store original content for re-editing
   const [originalContent, setOriginalContent] = useState<string | null>(existingNote?.content || null)
+  
+  // Track if we've initialized from existing note
+  const [hasInitializedFromExisting, setHasInitializedFromExisting] = useState(false)
   const [uop, setUop] = useState({ intake: 1200, output: 2400, net: -1200 })
   const [exam, setExam] = useState({
     general: 'Alert, oriented, NAD',
@@ -974,7 +1024,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   })
   const [selectedLabs, setSelectedLabs] = useState(['CBC', 'CMP', 'Cardiac', 'Minerals'])
   const [selectedImaging, setSelectedImaging] = useState(['CXR', 'Echo'])
-  const [recommendations, setRecommendations] = useState<APRecommendation[]>([])
+  const [recommendations, setRecommendations] = useState<APRecommendation[]>(() => {
+    // Initialize from existing note if provided, otherwise use defaults
+    if (existingNote?.content) {
+      const parsed = parseExistingAP(existingNote.content)
+      if (parsed.length > 0) return parsed
+    }
+    return []
+  })
   const [expandedProblems, setExpandedProblems] = useState<Set<string>>(new Set())
   const [editingProblem, setEditingProblem] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
