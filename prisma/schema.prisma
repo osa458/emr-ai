@@ -76,3 +76,176 @@ model FeatureFlag {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// Patient records
+model Patient {
+  id          String   @id @default(cuid())
+  mrn         String   @unique
+  firstName   String
+  lastName    String
+  birthDate   DateTime
+  gender      String
+  phone       String?
+  email       String?
+  address     String?
+  status      PatientStatus @default(ACTIVE)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  appointments Appointment[]
+  encounters   Encounter[]
+}
+
+enum PatientStatus {
+  ACTIVE
+  INACTIVE
+  DECEASED
+}
+
+// Practitioner/Provider records
+model Practitioner {
+  id            String   @id @default(cuid())
+  npi           String?  @unique
+  firstName     String
+  lastName      String
+  specialty     String?
+  phone         String?
+  email         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  appointments  Appointment[]
+  encounters    Encounter[]
+}
+
+// Appointments
+model Appointment {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  practitionerId  String?
+  practitioner    Practitioner? @relation(fields: [practitionerId], references: [id])
+  serviceType     String
+  status          AppointmentStatus @default(BOOKED)
+  start           DateTime
+  end             DateTime
+  minutesDuration Int      @default(30)
+  reason          String?
+  mode            AppointmentMode @default(IN_PERSON)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum AppointmentStatus {
+  PROPOSED
+  PENDING
+  BOOKED
+  ARRIVED
+  FULFILLED
+  CANCELLED
+  NOSHOW
+}
+
+enum AppointmentMode {
+  IN_PERSON
+  TELEHEALTH
+  PHONE
+}
+
+// Encounters/Visits
+model Encounter {
+  id              String   @id @default(cuid())
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  practitionerId  String?
+  practitioner    Practitioner? @relation(fields: [practitionerId], references: [id])
+  type            String
+  status          EncounterStatus @default(IN_PROGRESS)
+  class           String?  // inpatient, outpatient, emergency
+  reasonCode      String?
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+  location        String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum EncounterStatus {
+  PLANNED
+  IN_PROGRESS
+  ON_HOLD
+  DISCHARGED
+  CANCELLED
+}
+
+// Services/Procedures catalog
+model Service {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  category    String?
+  price       Decimal? @db.Decimal(10, 2)
+  duration    Int?     // minutes
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  invoiceItems InvoiceItem[]
+}
+
+// Invoices
+model Invoice {
+  id          String   @id @default(cuid())
+  invoiceNo   String   @unique
+  patientId   String
+  status      InvoiceStatus @default(DRAFT)
+  issueDate   DateTime @default(now())
+  dueDate     DateTime?
+  subtotal    Decimal  @db.Decimal(10, 2)
+  tax         Decimal  @default(0) @db.Decimal(10, 2)
+  total       Decimal  @db.Decimal(10, 2)
+  paidAmount  Decimal  @default(0) @db.Decimal(10, 2)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       InvoiceItem[]
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  PARTIAL
+  OVERDUE
+  CANCELLED
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  serviceId   String?
+  service     Service? @relation(fields: [serviceId], references: [id])
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  total       Decimal  @db.Decimal(10, 2)
+}
+
+// Audit log for compliance
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+}
