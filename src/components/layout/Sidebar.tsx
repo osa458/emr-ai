@@ -20,17 +20,25 @@ import {
   UserPlus,
   Menu,
   X,
+  Receipt,
+  Briefcase,
+  UserCog,
+  Search,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Patients', href: '/patients', icon: Users },
-  { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
+  { name: 'Practitioners', href: '/practitioners', icon: UserCog },
+  { name: 'Encounters', href: '/encounters', icon: Stethoscope },
   { name: 'Appointments', href: '/appointments', icon: Calendar },
-  { name: 'Telemedicine', href: '/telemedicine', icon: Video },
+  { name: 'Services', href: '/services', icon: Briefcase },
+  { name: 'Invoices', href: '/invoices', icon: Receipt },
   { name: 'Clinical Forms', href: '/forms', icon: ClipboardList },
+  { name: 'Telemedicine', href: '/telemedicine', icon: Video },
   { name: 'Morning Triage', href: '/triage', icon: Activity },
   { name: 'Discharge Planning', href: '/discharge-planning', icon: ClipboardList },
+  { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
   { name: 'Form Builder', href: '/admin/forms', icon: FileEdit },
   { name: 'Audit Log', href: '/admin/audit', icon: FileText, adminOnly: true },
 ]
