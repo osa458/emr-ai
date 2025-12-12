@@ -28,6 +28,7 @@ const navigation = [
   { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
   { name: 'Appointments', href: '/appointments', icon: Calendar },
   { name: 'Telemedicine', href: '/telemedicine', icon: Video },
+  { name: 'Clinical Forms', href: '/forms', icon: ClipboardList },
   { name: 'Morning Triage', href: '/triage', icon: Activity },
   { name: 'Discharge Planning', href: '/discharge-planning', icon: ClipboardList },
   { name: 'Form Builder', href: '/admin/forms', icon: FileEdit },
