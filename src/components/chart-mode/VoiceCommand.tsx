@@ -250,7 +250,7 @@ export function VoiceCommand({ isActive, onToggle, onCommand, patientName }: Voi
               
               {status === 'error' && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Try saying: "Hey EMR, order a BMP" or "Hey EMR, page nephrology"
+                  Try saying: &quot;Hey EMR, order a BMP&quot; or &quot;Hey EMR, page nephrology&quot;
                 </p>
               )}
             </div>

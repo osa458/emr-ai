@@ -27,7 +27,8 @@ import {
   Clock,
   CheckCircle,
 } from 'lucide-react'
-import { FormRenderer } from '@/components/forms/FormRenderer'
+import { QuestionnaireRenderer } from '@/components/forms/QuestionnaireRenderer'
+import type { Questionnaire, QuestionnaireResponse } from '@medplum/fhirtypes'
 
 interface FormSummary {
   id: string
@@ -43,8 +44,7 @@ export default function FormsPage() {
   const [forms, setForms] = useState<FormSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedFormId, setSelectedFormId] = useState<string | null>(null)
-  const [selectedForm, setSelectedForm] = useState<any>(null)
+  const [selectedForm, setSelectedForm] = useState<Questionnaire | null>(null)
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false)
 
   useEffect(() => {
@@ -70,8 +70,7 @@ export default function FormsPage() {
       const res = await fetch(`/api/forms?id=${formId}`)
       const data = await res.json()
       if (data.success) {
-        setSelectedForm(data.data)
-        setSelectedFormId(formId)
+        setSelectedForm(data.data as Questionnaire)
         setIsFormDialogOpen(true)
       }
     } catch (error) {
@@ -79,11 +78,24 @@ export default function FormsPage() {
     }
   }
 
-  const handleFormSubmit = async (responses: Record<string, any>) => {
-    console.log('Form submitted:', responses)
-    // TODO: Save QuestionnaireResponse to FHIR server
-    alert('Form submitted successfully!')
-    setIsFormDialogOpen(false)
+  const handleFormSubmit = async (response: QuestionnaireResponse) => {
+    try {
+      const res = await fetch('/api/forms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(response),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to save response')
+      }
+      alert('Form submitted successfully!')
+    } catch (error) {
+      console.error('Failed to save form response:', error)
+      alert('Failed to save form response')
+    } finally {
+      setIsFormDialogOpen(false)
+    }
   }
 
   const filteredForms = forms.filter(
@@ -204,9 +216,10 @@ export default function FormsPage() {
             <DialogTitle>{selectedForm?.title || 'Form'}</DialogTitle>
           </DialogHeader>
           {selectedForm && (
-            <FormRenderer
+            <QuestionnaireRenderer
               questionnaire={selectedForm}
               onSubmit={handleFormSubmit}
+              showAISuggestions
             />
           )}
         </DialogContent>

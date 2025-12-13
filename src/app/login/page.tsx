@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -13,7 +13,7 @@ const demoAccounts = [
   { email: 'casemanager@demo.com', role: 'Case Manager', name: 'Carol Smith, LCSW' },
 ]
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
@@ -139,11 +139,9 @@ export default function LoginPage() {
             </p>
             <div className="space-y-2">
               {demoAccounts.map((account) => (
-                <button
+                <div
                   key={account.email}
                   className="w-full flex items-center justify-between rounded-md border p-3 hover:bg-gray-50 transition-colors text-left"
-                  onClick={() => handleDemoLogin(account.email)}
-                  disabled={isLoading}
                 >
                   <div>
                     <div className="font-medium text-sm">{account.name}</div>
@@ -151,10 +149,15 @@ export default function LoginPage() {
                       {account.role}
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" disabled={isLoading}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    disabled={isLoading}
+                    onClick={() => handleDemoLogin(account.email)}
+                  >
                     Login
                   </Button>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -165,5 +168,17 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
+        <div className="text-white">Loading...</div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

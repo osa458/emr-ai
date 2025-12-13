@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,6 +25,7 @@ import {
   Calendar,
   User,
 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import type { DischargeReadinessOutput } from '@/lib/llm/schemas'
 import { DischargeInstructionsPanel } from '@/components/ai/DischargeInstructionsPanel'
 import { MedicationReconciliation } from '@/components/discharge/MedicationReconciliation'
@@ -184,6 +184,7 @@ const readinessConfig: Record<string, { color: string; bgColor: string }> = {
 
 export default function DischargeReadinessPage() {
   const params = useParams()
+  const router = useRouter()
   const patientId = params.patientId as string
 
   const [readiness, setReadiness] = useState<DischargeReadinessOutput | null>(null)
@@ -238,12 +239,14 @@ export default function DischargeReadinessPage() {
   return (
     <div className="space-y-6">
       {/* Back button */}
-      <Link href={`/patients/${patientId}`}>
-        <Button variant="ghost" size="sm">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Chart
-        </Button>
-      </Link>
+      <Button 
+        variant="ghost" 
+        size="sm"
+        onClick={() => router.push(`/patients/${patientId}`)}
+      >
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back to Chart
+      </Button>
 
       {/* Patient Banner */}
       <Card className="bg-gradient-to-r from-slate-700 to-slate-800 text-white">

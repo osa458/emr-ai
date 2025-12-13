@@ -322,7 +322,7 @@ export function CommandPalette({ isOpen, onClose, patientId, patientName }: Comm
           {filteredCommands.length === 0 && (
             <div className="px-4 py-8 text-center text-muted-foreground">
               <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No commands found for "{query}"</p>
+              <p>No commands found for &quot;{query}&quot;</p>
             </div>
           )}
         </div>
