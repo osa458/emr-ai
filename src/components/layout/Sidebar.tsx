@@ -33,7 +33,7 @@ const navigation = [
   { name: 'Practitioners', href: '/practitioners', icon: UserCog },
   { name: 'Encounters', href: '/encounters', icon: Stethoscope },
   { name: 'Appointments', href: '/appointments', icon: Calendar },
-   { name: 'Medications', href: '/medications', icon: Pill },
+  { name: 'Medications', href: '/medications', icon: Pill },
   { name: 'Services', href: '/services', icon: Briefcase },
   { name: 'Invoices', href: '/invoices', icon: Receipt },
   { name: 'Clinical Forms', href: '/forms', icon: ClipboardList },
@@ -42,6 +42,7 @@ const navigation = [
   { name: 'Discharge Planning', href: '/discharge-planning', icon: ClipboardList },
   { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
   { name: 'Form Builder', href: '/admin/forms', icon: FileEdit },
+  { name: 'Medications Admin', href: '/admin/medications', icon: Pill, adminOnly: true },
   { name: 'Audit Log', href: '/admin/audit', icon: FileText, adminOnly: true },
 ]
 

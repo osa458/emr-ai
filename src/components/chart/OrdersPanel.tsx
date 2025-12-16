@@ -26,6 +26,8 @@ import {
   Edit,
   History,
 } from 'lucide-react'
+import type { MedicationRequest } from '@medplum/fhirtypes'
+import { usePatientMedicationRequests } from '@/hooks/useFHIRData'
 
 // Types
 interface OrderSetItem {
@@ -267,6 +269,13 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([])
   const [submittedOrders, setSubmittedOrders] = useState<PendingOrder[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Labs', 'Medications']))
+
+  // FHIR-backed active medication orders (MedicationRequest)
+  const {
+    data: medicationRequests,
+    isLoading: medsLoading,
+    isError: medsError,
+  } = usePatientMedicationRequests(patientId)
   
   // Filter orders by search
   const filteredSingleOrders = orderSearch 
@@ -510,7 +519,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
           </CardContent>
         </Card>
 
-        {/* Right Panel - Pending & Submitted Orders */}
+        {/* Right Panel - Pending, Submitted & Medication Orders */}
         <div className="w-80 space-y-4">
           {/* Pending Orders */}
           <Card>
@@ -582,6 +591,88 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Active medication orders from FHIR (MedicationRequest) */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Pill className="h-4 w-4" />
+                Medication Orders
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {medsLoading && (
+                <div className="text-xs text-muted-foreground py-2">
+                  Loading medication orders…
+                </div>
+              )}
+              {medsError && !medsLoading && (
+                <div className="text-xs text-red-600 flex items-center gap-1 py-2">
+                  <AlertCircle className="h-3 w-3" />
+                  Unable to load active medication orders.
+                </div>
+              )}
+              {!medsLoading && !medsError && (!medicationRequests || medicationRequests.length === 0) && (
+                <div className="text-xs text-muted-foreground py-2">
+                  No active medication orders found for this patient.
+                </div>
+              )}
+              {!medsLoading && !medsError && medicationRequests && medicationRequests.length > 0 && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {medicationRequests.map((mr: MedicationRequest) => {
+                    const name =
+                      mr.medicationCodeableConcept?.text ||
+                      mr.medicationCodeableConcept?.coding?.[0]?.display ||
+                      'Medication order'
+                    const authored = mr.authoredOn
+                      ? new Date(mr.authoredOn).toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : undefined
+                    const route =
+                      mr.dosageInstruction?.[0]?.route?.text ||
+                      mr.dosageInstruction?.[0]?.route?.coding?.[0]?.display
+                    const freq =
+                      mr.dosageInstruction?.[0]?.timing?.code?.text ||
+                      mr.dosageInstruction?.[0]?.timing?.repeat?.frequency?.toString()
+
+                    return (
+                      <div
+                        key={mr.id}
+                        className="border border-slate-200 rounded px-2 py-1.5 text-[11px] flex flex-col gap-0.5 bg-slate-50"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-medium truncate">{name}</span>
+                          <Badge
+                            variant={mr.status === 'active' ? 'default' : 'secondary'}
+                            className="text-[9px]"
+                          >
+                            {mr.status || 'active'}
+                          </Badge>
+                        </div>
+                        {(route || freq) && (
+                          <div className="text-[10px] text-muted-foreground">
+                            {route && <span>{route}</span>}
+                            {route && freq && <span> • </span>}
+                            {freq && <span>{freq}</span>}
+                          </div>
+                        )}
+                        {authored && (
+                          <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            <span>{authored}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
