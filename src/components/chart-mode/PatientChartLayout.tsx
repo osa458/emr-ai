@@ -257,9 +257,17 @@ export function PatientChartLayout({ patient, children, currentUserId = 'current
         isOpen={isHandoffOpen}
         onClose={() => setIsHandoffOpen(false)}
         patient={{
-          ...patient,
+          id: patient.id,
+          name: patient.name,
+          age: patient.age,
+          gender: patient.gender,
+          mrn: patient.mrn,
+          location: patient.location,
+          admitDate: patient.admitDate,
+          codeStatus: patient.codeStatus,
           attendingPhysician: patient.attendingPhysician || 'Dr. Smith',
           diagnosis: patient.diagnosis || patient.problems,
+          allergies: patient.allergies.map(a => a.name),
           keyUpdates: patient.keyUpdates || ['Cr improved 2.4 → 2.1', 'Tolerating PO, IVF weaned'],
           overnightTasks: patient.overnightTasks || [
             'Recheck BMP at 6am',

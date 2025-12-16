@@ -28,14 +28,14 @@ EMR AI is a modern, AI-powered Electronic Medical Records system built with Next
          ▼               ▼               ▼               ▼
 ┌─────────────────┐ ┌───────────┐ ┌───────────────┐ ┌───────────────┐
 │   FHIR Client   │ │LLM Client │ │    Prisma     │ │  Jitsi Meet   │
-│   (Medplum)     │ │ (OpenAI)  │ │  (App Data)   │ │ (Telemedicine)│
+│   (Aidbox)      │ │ (OpenAI)  │ │  (App Data)   │ │ (Telemedicine)│
 └────────┬────────┘ └─────┬─────┘ └───────┬───────┘ └───────┬───────┘
          │                │               │                 │
          ▼                ▼               ▼                 ▼
 ┌─────────────────┐ ┌───────────┐ ┌───────────────┐ ┌───────────────┐
-│    Medplum      │ │  OpenAI   │ │  PostgreSQL   │ │  meet.jit.si  │
+│    Aidbox       │ │  OpenAI   │ │  PostgreSQL   │ │  meet.jit.si  │
 │   FHIR Server   │ │    API    │ │   (Docker)    │ │   (Public)    │
-│    (Docker)     │ │           │ │               │ │               │
+│ (Hosted/Local)  │ │           │ │               │ │               │
 └─────────────────┘ └───────────┘ └───────────────┘ └───────────────┘
 ```
 
@@ -55,9 +55,9 @@ EMR AI is a modern, AI-powered Electronic Medical Records system built with Next
 - **NextAuth.js** - Authentication
 
 ### Data Layer
-- **Medplum** - FHIR R4 server (containerized)
+- **Aidbox** - FHIR R4 server (hosted or self-hosted)
 - **PostgreSQL** - Application database
-- **@medplum/core** - FHIR client library
+- **FHIR REST** - via pluggable adapter (Aidbox/other)
 
 ### AI Integration
 - **OpenAI GPT-4** - Language model
@@ -131,7 +131,7 @@ emr-ai/
 │   └── types/                  # TypeScript types
 │
 ├── scripts/
-│   ├── seed-fhir.ts            # Synthetic data seeding
+│   ├── seed-aidbox.ts          # Synthetic data seeding
 │   ├── setup.sh                # One-command setup
 │   └── demo.ts                 # Demo scenarios
 │
@@ -245,7 +245,7 @@ emr-ai/
 
 1. **Next.js App Router** - Single framework for frontend + API, with React Server Components for performance
 
-2. **Medplum for FHIR** - TypeScript-native FHIR server with easy Docker deployment
+2. **Aidbox for FHIR** - Flexible FHIR server with hosted/self-hosted options
 
 3. **Zod Schemas** - Enforce LLM output structure and type safety
 

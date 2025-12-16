@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Encounter } from '@medplum/fhirtypes'
 
-const FHIR_BASE = process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103/fhir/R4'
+const FHIR_BASE = process.env.NEXT_PUBLIC_AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://aoadhslfxc.edge.aidbox.app'
 
 async function fetchEncounter(encounterId: string): Promise<Encounter> {
   const response = await fetch(`${FHIR_BASE}/Encounter/${encounterId}`, {

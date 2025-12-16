@@ -2,26 +2,23 @@
 
 ## Overview
 
-EMR AI uses a FHIR R4 compliant data layer built on Medplum. This document describes the FHIR client architecture and usage patterns.
+EMR AI uses a FHIR R4 compliant data layer targeting Aidbox (or any FHIR R4 server). This document describes the FHIR client architecture and usage patterns.
 
 ## Setup
 
 ### Prerequisites
 
 - Docker and Docker Compose
-- Medplum server running on `http://localhost:8103`
+- Aidbox (or another FHIR R4 server) reachable at `AIDBOX_BASE_URL`
 
 ### Starting the FHIR Server
 
 ```bash
-# Start all services including Medplum
+# Start all services
 docker-compose up -d
 
-# Wait for Medplum to be ready
-curl http://localhost:8103/healthcheck
-
-# Seed synthetic data
-pnpm seed
+# Verify Aidbox health (example)
+curl $AIDBOX_BASE_URL/health
 ```
 
 ## Client Configuration
@@ -29,24 +26,11 @@ pnpm seed
 ### Basic Client Setup
 
 ```typescript
-// src/lib/fhir/client.ts
-import { MedplumClient } from '@medplum/core';
+// src/lib/fhir/client.ts (wrapper)
+import { getFhirAdapter } from '@/lib/fhir/adapter'
 
-const medplum = new MedplumClient({
-  baseUrl: process.env.MEDPLUM_BASE_URL || 'http://localhost:8103',
-});
-
-export default medplum;
-```
-
-### Authentication
-
-```typescript
-// For server-side operations
-await medplum.startLogin({
-  email: process.env.MEDPLUM_ADMIN_EMAIL,
-  password: process.env.MEDPLUM_ADMIN_PASSWORD,
-});
+const fhir = getFhirAdapter()
+// fhir.listQuestionnaires(), fhir.getPatient(id), etc.
 ```
 
 ## Resource Types Used
@@ -380,10 +364,9 @@ try {
 2. **Paginate** - Use `_count` and pagination for large result sets
 3. **Cache** - Use React Query for client-side caching
 4. **Batch** - Use `Promise.all` for parallel requests
-5. **Index** - Ensure search parameters are indexed in Medplum
+5. **Index** - Ensure search parameters are supported/optimized in your FHIR server
 
 ## Resources
 
 - [FHIR R4 Specification](https://hl7.org/fhir/R4/)
-- [Medplum Documentation](https://www.medplum.com/docs)
-- [@medplum/core API](https://www.medplum.com/docs/api/core)
+- [Aidbox Documentation](https://docs.aidbox.app/)

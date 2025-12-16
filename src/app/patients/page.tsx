@@ -37,6 +37,8 @@ import {
   getListsForPatient,
   type PatientList 
 } from '@/lib/patientLists'
+import { usePatients } from '@/hooks/usePatient'
+import { formatPatientName } from '@/lib/fhir/resources/patient'
 
 // Mock patient data for demo - matches seed data
 const mockPatients = [
@@ -82,9 +84,17 @@ export default function PatientsPage() {
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [sortField, setSortField] = useState<SortField>(null)
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [selectedListId, setSelectedListId] = useState<string>('all-patients')
+  const [selectedListId, setSelectedListId] = useState<string>('aidbox-patients')
   const [patientLists, setPatientLists] = useState<PatientList[]>([])
   const [listRefreshKey, setListRefreshKey] = useState(0)
+  const [aidboxPage, setAidboxPage] = useState(1)
+  const {
+    data: aidboxData,
+    isLoading: isLoadingAidbox,
+    isError: isAidboxError,
+  } = usePatients({ _count: 50, page: aidboxPage })
+  const aidboxPatients = aidboxData?.patients || []
+  const aidboxTotal = aidboxData?.total || 0
 
   // Simulate loading state
   useEffect(() => {
@@ -124,13 +134,33 @@ export default function PatientsPage() {
 
   // Get patients for selected list
   const getListPatients = () => {
-    if (selectedListId === 'all-patients') {
+    if (selectedListId === 'mock-patients') {
       return mockPatients
+    }
+    if (selectedListId === 'aidbox-patients') {
+      return aidboxPatients.map((p) => ({
+        id: p.id || '',
+        name: formatPatientName(p),
+        mrn: p.identifier?.[0]?.value || 'MRN-N/A',
+        age: p.birthDate ? Math.floor((Date.now() - new Date(p.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 0,
+        gender: p.gender || 'unknown',
+        location: p.address?.[0]?.text || 'Unknown',
+        diagnosis: '—',
+        status: 'moderate',
+        admitDate: p.meta?.lastUpdated || '',
+      }))
     }
     const list = patientLists.find((l) => l.id === selectedListId)
     if (!list) return mockPatients
     return mockPatients.filter((p) => list.patientIds.includes(p.id))
   }
+
+  // Reset Aidbox page when switching lists
+  useEffect(() => {
+    if (selectedListId === 'aidbox-patients') {
+      setAidboxPage(1)
+    }
+  }, [selectedListId])
 
   const listPatients = getListPatients()
 
@@ -144,10 +174,14 @@ export default function PatientsPage() {
   // Calculate patient counts for each list
   const patientCounts: Record<string, number> = {
     all: mockPatients.length,
+    'mock-patients': mockPatients.length,
+    'aidbox-patients': aidboxPatients.length,
   }
   patientLists.forEach((list) => {
-    if (list.id === 'all-patients') {
+    if (list.id === 'mock-patients') {
       patientCounts[list.id] = mockPatients.length
+    } else if (list.id === 'aidbox-patients') {
+      patientCounts[list.id] = aidboxPatients.length
     } else {
       patientCounts[list.id] = mockPatients.filter((p) => 
         list.patientIds.includes(p.id)
@@ -222,6 +256,8 @@ export default function PatientsPage() {
   })
 
   const selectedList = patientLists.find((l) => l.id === selectedListId)
+
+  const totalPages = selectedListId === 'aidbox-patients' ? Math.max(1, Math.ceil(aidboxTotal / 50)) : 1
 
   return (
     <div className="flex h-[calc(100vh-6rem)]" style={{ fontWeight: 200, fontSize: '14px' }}>
@@ -456,7 +492,7 @@ export default function PatientsPage() {
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent>
                           {patientLists
-                            .filter((l) => !l.isDefault || l.id !== 'all-patients')
+                            .filter((l) => !l.isDefault || (l.id !== 'mock-patients' && l.id !== 'aidbox-patients'))
                             .map((list) => {
                               const isInList = list.patientIds.includes(patient.id)
                               return (
@@ -486,7 +522,7 @@ export default function PatientsPage() {
                             </DropdownMenuSubTrigger>
                             <DropdownMenuSubContent>
                               {patientLists
-                                .filter((l) => l.patientIds.includes(patient.id) && l.id !== 'all-patients')
+                                .filter((l) => l.patientIds.includes(patient.id) && l.id !== 'mock-patients' && l.id !== 'aidbox-patients')
                                 .map((list) => (
                                   <DropdownMenuItem
                                     key={list.id}
@@ -510,6 +546,34 @@ export default function PatientsPage() {
             ))}
           </TableBody>
         </Table>
+        {selectedListId === 'aidbox-patients' && (
+          <CardContent className="flex items-center justify-between py-3">
+            <div className="text-sm text-muted-foreground">
+              Showing {aidboxPatients.length} of {aidboxTotal} patients
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={aidboxPage <= 1 || isLoadingAidbox}
+                onClick={() => setAidboxPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </Button>
+              <span className="text-sm">
+                Page {aidboxPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={aidboxPage >= totalPages || isLoadingAidbox}
+                onClick={() => setAidboxPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </CardContent>
+        )}
       </Card>
       </div>
     </div>

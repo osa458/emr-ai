@@ -339,7 +339,7 @@ let fhirClient: FhirClient | null = null
 export function getFhirClient(): FhirClient {
   if (!fhirClient) {
     fhirClient = new FhirClient({
-      baseUrl: process.env.MEDPLUM_BASE_URL || 'http://localhost:8103/fhir/R4',
+      baseUrl: process.env.AIDBOX_BASE_URL || process.env.MEDPLUM_BASE_URL || 'https://aoadhslfxc.edge.aidbox.app',
     })
   }
   return fhirClient

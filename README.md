@@ -16,7 +16,7 @@ A modern, AI-powered EMR system for clinical decision support, featuring diagnos
 | **Frontend** | Next.js 14, React 18, TypeScript |
 | **Styling** | Tailwind CSS, shadcn/ui components |
 | **State** | TanStack Query (React Query) |
-| **FHIR Server** | Medplum (containerized) |
+| **FHIR Server** | Aidbox (hosted or self-hosted FHIR R4) |
 | **Database** | PostgreSQL (app data) |
 | **AI** | OpenAI GPT-4 |
 | **Container** | Docker Compose |
@@ -106,7 +106,7 @@ emr-ai/
 │
 ├── scripts/
 │   ├── setup.sh                  # One-command setup
-│   └── seed-fhir.ts              # Synthetic data seeding
+│   └── seed-aidbox.ts            # Synthetic data seeding
 │
 └── docker-compose.yml            # Local development services
 ```
@@ -171,14 +171,16 @@ pnpm seed
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `MEDPLUM_BASE_URL` | FHIR server URL | Yes |
+| `AIDBOX_BASE_URL` | FHIR server URL | Yes |
+| `AIDBOX_CLIENT_ID` | Aidbox client ID | Yes |
+| `AIDBOX_CLIENT_SECRET` | Aidbox client secret | Yes |
 | `DATABASE_URL` | PostgreSQL connection | Yes |
 | `OPENAI_API_KEY` | OpenAI API key | For AI features |
 | `NEXTAUTH_SECRET` | Auth secret | For production |
 
 ## Demo Mode
 
-The application works without an OpenAI API key by returning mock AI responses. This is useful for UI development and demonstrations.
+The application works without an OpenAI API key by returning mock AI responses. This is useful for UI development and demonstrations. For FHIR, set `AIDBOX_BASE_URL` (and client credentials) to point at your Aidbox instance.
 
 To enable real AI features, add your OpenAI API key to `.env.local`.
 

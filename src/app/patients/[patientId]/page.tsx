@@ -21,6 +21,9 @@ import {
   ImageIcon,
   Sparkles,
   ClipboardList,
+  Scissors,
+  CheckSquare,
+  Shield,
 } from 'lucide-react'
 import { RealTimeVitals } from '@/components/clinical/RealTimeVitals'
 import { ClinicalNotes } from '@/components/clinical/ClinicalNotes'
@@ -33,11 +36,19 @@ import { ImagingList } from '@/components/chart/ImagingList'
 import { VitalsTrend } from '@/components/chart/VitalsTrend'
 import { NotesPanel } from '@/components/chart/NotesPanel'
 import { OrdersPanel } from '@/components/chart/OrdersPanel'
+import { ProceduresPanel } from '@/components/chart/ProceduresPanel'
+import { TasksPanel } from '@/components/chart/TasksPanel'
+import { CarePlanPanel } from '@/components/chart/CarePlanPanel'
+import { CoveragePanel } from '@/components/chart/CoveragePanel'
 import { AISidebar } from '@/components/ai/AISidebar'
 import { TextSelectionPopover } from '@/components/ai/TextSelectionPopover'
 import { PatientStickyNote } from '@/components/patients/PatientStickyNote'
 import { PatientChartLayout } from '@/components/chart-mode/PatientChartLayout'
 import type { Observation, MedicationRequest, MedicationStatement, DiagnosticReport } from '@medplum/fhirtypes'
+import useSWR from 'swr'
+import { usePatient } from '@/hooks/usePatient'
+import { usePatientLabs, usePatientMedications, usePatientImaging, usePatientConditions } from '@/hooks/useFHIRData'
+import { formatPatientName } from '@/lib/fhir/resources/patient'
 
 // Helper to generate dates
 const hoursAgo = (h: number) => {
@@ -317,6 +328,28 @@ const getMockPatient = (id: string) => ({
   ],
 })
 
+const mapAidboxPatient = (p: any, fallbackId: string) => {
+  const name = p ? formatPatientName(p) : 'Unknown'
+  const birthDate = p?.birthDate ? new Date(p.birthDate) : null
+  const age = birthDate ? Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : undefined
+  return {
+    id: p?.id || fallbackId,
+    name,
+    mrn: p?.identifier?.[0]?.value || 'MRN-N/A',
+    age: age ?? 0,
+    gender: p?.gender || 'unknown',
+    birthDate: p?.birthDate,
+    location: p?.address?.[0]?.text || 'Unknown',
+    admitDate: p?.meta?.lastUpdated || '',
+    attending: 'Attending MD',
+    diagnosis: '—',
+    conditions: [],
+    vitals: [],
+    labs: [],
+    medications: [],
+  }
+}
+
 // Enhanced patient data for the 2025 chart layout
 const getEnhancedPatientData = (patient: ReturnType<typeof getMockPatient>) => ({
   id: patient.id,
@@ -384,8 +417,19 @@ export default function PatientChartPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const patientId = params.patientId as string
-  const patient = getMockPatient(patientId)
-  const enhancedPatient = getEnhancedPatientData(patient)
+  const { data: aidboxPatient } = usePatient(patientId)
+  const { data: chartData } = useSWR(patientId ? `/api/fhir/patient-chart?id=${patientId}` : null, (url) =>
+    fetch(url).then((r) => r.json())
+  )
+
+  // FHIR data hooks for chart components
+  const { data: fhirLabs, isLoading: labsLoading } = usePatientLabs(patientId)
+  const { inpatientMedications, homeMedications, isLoading: medsLoading } = usePatientMedications(patientId)
+  const { data: fhirImaging, isLoading: imagingLoading } = usePatientImaging(patientId)
+  const { data: fhirConditions } = usePatientConditions(patientId)
+
+  const patient = aidboxPatient ? mapAidboxPatient(aidboxPatient, patientId) : getMockPatient(patientId)
+  const enhancedPatient = getEnhancedPatientData(patient as ReturnType<typeof getMockPatient>)
   const [isAISidebarOpen, setIsAISidebarOpen] = useState(false)
 
   // Get tab from URL if specified (for command palette navigation)
@@ -432,6 +476,19 @@ export default function PatientChartPage() {
             <TabsTrigger value="billing" className="flex items-center gap-1">
               <DollarSign className="h-4 w-4" />
               Billing
+            </TabsTrigger>
+            <TabsTrigger value="procedures" className="flex items-center gap-1">
+              <Scissors className="h-4 w-4" />
+              Procedures
+            </TabsTrigger>
+            <TabsTrigger value="tasks" className="flex items-center gap-1">
+              <CheckSquare className="h-4 w-4" />
+              Tasks
+            </TabsTrigger>
+            <TabsTrigger value="careplan">Care Plan</TabsTrigger>
+            <TabsTrigger value="insurance" className="flex items-center gap-1">
+              <Shield className="h-4 w-4" />
+              Insurance
             </TabsTrigger>
             <Link href={`/patients/${patientId}/discharge`}>
               <TabsTrigger value="discharge" className="flex items-center gap-1">
@@ -564,19 +621,20 @@ export default function PatientChartPage() {
         <TabsContent value="labs">
           <div className="space-y-6">
             <LabsTrend patientId={patientId} />
-            <LabsTable labs={getMockLabs()} />
+            <LabsTable labs={fhirLabs || []} isLoading={labsLoading} />
           </div>
         </TabsContent>
 
         <TabsContent value="medications">
-          <MedicationsPanel 
-            inpatientMedications={getMockInpatientMeds()}
-            homeMedications={getMockHomeMeds()}
+          <MedicationsPanel
+            inpatientMedications={inpatientMedications}
+            homeMedications={homeMedications}
+            isLoading={medsLoading}
           />
         </TabsContent>
 
         <TabsContent value="imaging">
-          <ImagingList imagingStudies={getMockImaging()} />
+          <ImagingList imagingStudies={fhirImaging || []} isLoading={imagingLoading} />
         </TabsContent>
 
         <TabsContent value="notes">
@@ -593,6 +651,22 @@ export default function PatientChartPage() {
 
         <TabsContent value="billing">
           <BillingAssistPanel encounterId={`encounter-${patientId}`} />
+        </TabsContent>
+
+        <TabsContent value="procedures">
+          <ProceduresPanel patientId={patientId} />
+        </TabsContent>
+
+        <TabsContent value="tasks">
+          <TasksPanel patientId={patientId} />
+        </TabsContent>
+
+        <TabsContent value="careplan">
+          <CarePlanPanel patientId={patientId} />
+        </TabsContent>
+
+        <TabsContent value="insurance">
+          <CoveragePanel patientId={patientId} />
         </TabsContent>
       </Tabs>
 

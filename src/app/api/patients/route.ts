@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
     // 5. Trigger any admission workflows
 
     // For now, we'll return success with the generated IDs
-    // In production, this would integrate with Medplum or another FHIR server
+    // In production, this would integrate with Aidbox (or another FHIR server)
 
     console.log('New patient admission:', {
       patient: patientResource,

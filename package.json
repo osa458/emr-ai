@@ -17,7 +17,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "seed": "tsx scripts/seed-fhir.ts"
+    "seed": "tsx scripts/seed-aidbox.ts"
   },
   "dependencies": {
     "@beda.software/fhir-react": "^1.10.0",
@@ -61,6 +61,7 @@
     "react-audio-voice-recorder": "^2.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^3.5.1",
+    "swr": "^2.3.8",
     "tailwind-merge": "^2.2.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.22.4"

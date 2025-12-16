@@ -47,42 +47,14 @@ fi
 echo "🐳 Starting Docker services..."
 docker-compose up -d
 
-# Wait for Medplum to be ready
-echo ""
-echo "⏳ Waiting for Medplum FHIR server to start..."
-echo "   (This may take 1-2 minutes on first run)"
-
-MAX_ATTEMPTS=60
-ATTEMPT=0
-
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-    if curl -sf http://localhost:8103/healthcheck > /dev/null 2>&1; then
-        echo "✅ Medplum is ready"
-        break
-    fi
-    ATTEMPT=$((ATTEMPT + 1))
-    sleep 2
-    echo -n "."
-done
-
-if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-    echo ""
-    echo "⚠️  Medplum did not start in time. It may still be initializing."
-    echo "   Check: docker-compose logs medplum"
-fi
-
-echo ""
-
 # Generate Prisma client
 echo "🗃️  Generating Prisma client..."
 pnpm db:generate
 
 echo ""
 
-# Seed FHIR data (optional - may fail if Medplum isn't fully ready)
-echo "🌱 Seeding synthetic patient data..."
-echo "   (If this fails, run 'pnpm seed' manually after Medplum is fully started)"
-pnpm seed || echo "   Seeding deferred - run 'pnpm seed' when ready"
+# Seed data hook (no FHIR seed for Aidbox here)
+echo "🌱 Skipping FHIR seed (use Aidbox data as configured)"
 
 echo ""
 echo "=============================="

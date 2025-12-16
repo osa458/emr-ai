@@ -22,7 +22,9 @@ NEXTAUTH_SECRET="generate-with-openssl-rand-base64-32"
 OPENAI_API_KEY="sk-your-key"
 
 # Optional: FHIR Server
-MEDPLUM_BASE_URL="https://your-fhir-server/fhir/R4"
+AIDBOX_BASE_URL="https://your-aidbox-host"
+AIDBOX_CLIENT_ID="your-client-id"
+AIDBOX_CLIENT_SECRET="your-client-secret"
 ```
 
 ## Vercel Deployment

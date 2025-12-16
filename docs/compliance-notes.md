@@ -106,7 +106,7 @@ The following are REQUIRED before any production deployment:
 
 | Data Type | Storage Location | Contains PHI? | Encryption |
 |-----------|------------------|---------------|------------|
-| Clinical data | Medplum FHIR | YES (synthetic in dev) | At rest (prod) |
+| Clinical data | Aidbox FHIR | YES (synthetic in dev) | At rest (prod) |
 | User sessions | PostgreSQL | NO | At rest (prod) |
 | Audit logs | PostgreSQL | NO (redacted) | At rest (prod) |
 | AI prompts | Memory only | YES (transient) | In transit |
@@ -260,7 +260,7 @@ Required procedures:
 
 | Vendor | Service | BAA Available | HIPAA Eligible |
 |--------|---------|---------------|----------------|
-| Medplum | FHIR Server | N/A (self-hosted) | Yes (config) |
+| Aidbox | FHIR Server | Yes (cloud) | Yes (config) |
 | OpenAI | LLM API | Limited | No* |
 | Jitsi | Video | Yes | Yes |
 | Vercel | Hosting | Yes | Yes |
@@ -273,7 +273,7 @@ Required procedures:
 |---------|----------|-------|
 | Cloud | AWS/Azure/GCP | With BAA |
 | LLM | Azure OpenAI | With BAA |
-| FHIR | Medplum Cloud or self-hosted | With BAA |
+| FHIR | Aidbox Cloud or self-hosted | With BAA |
 | Video | Jitsi self-hosted | HIPAA compliant |
 | Auth | Auth0/Azure AD | With BAA |
 

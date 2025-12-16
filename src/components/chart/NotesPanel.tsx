@@ -1,10 +1,13 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Skeleton } from '@/components/ui/skeleton'
+import { usePatientNotes, useCreateNote, useUpdateNote, useSignNote } from '@/hooks/usePatientNotes'
+import type { ClinicalNote } from '@/lib/fhir/resources/clinical-note-types'
 import {
   Select,
   SelectContent,
@@ -299,7 +302,7 @@ _______________________________________________
 function generateMockNotes(): Note[] {
   const notes: Note[] = []
   const now = new Date()
-  
+
   // Generate notes for various services
   const noteData = [
     { service: 'Hospitalist', author: 'Dr. Sarah Johnson', role: 'Attending Physician', type: 'Progress Note', daysAgo: 0 },
@@ -328,7 +331,7 @@ function generateMockNotes(): Note[] {
     const noteDate = new Date(now)
     noteDate.setDate(noteDate.getDate() - data.daysAgo)
     noteDate.setHours(8 + Math.floor(Math.random() * 10), Math.floor(Math.random() * 60))
-    
+
     notes.push({
       id: `note-${idx}`,
       type: data.type,
@@ -360,10 +363,44 @@ function generateNoteContent(service: string, type: string): string {
 type SortBy = 'date' | 'noteType' | 'service' | 'author'
 
 export function NotesPanel({ patientId }: NotesPanelProps) {
+  // FHIR data hooks
+  const { data: fhirNotes, isLoading: notesLoading } = usePatientNotes(patientId)
+  const createNoteMutation = useCreateNote()
+  const updateNoteMutation = useUpdateNote()
+  const signNoteMutation = useSignNote()
+
   const [sortBy, setSortBy] = useState<SortBy>('service')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [selectedNote, setSelectedNote] = useState<Note | null>(null)
-  const [notes, setNotes] = useState<Note[]>(() => generateMockNotes())
+
+  // Convert FHIR notes to component Note format, fallback to mock if no FHIR data
+  const [localNotes, setLocalNotes] = useState<Note[]>([])
+
+  // Sync FHIR notes to local state
+  useEffect(() => {
+    if (fhirNotes && fhirNotes.length > 0) {
+      const converted: Note[] = fhirNotes.map((n: ClinicalNote) => ({
+        id: n.id,
+        type: n.type,
+        service: n.service,
+        title: n.title,
+        author: n.author,
+        authorRole: n.authorRole,
+        date: n.date,
+        content: n.content,
+        status: n.status,
+        isSmartNote: n.isSmartNote,
+      }))
+      setLocalNotes(converted)
+    } else if (!notesLoading) {
+      // Fallback to mock data if no FHIR notes
+      setLocalNotes(generateMockNotes())
+    }
+  }, [fhirNotes, notesLoading])
+
+  const notes = localNotes
+  const setNotes = setLocalNotes
+
   const [isEditing, setIsEditing] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [editContent, setEditContent] = useState('')
@@ -372,7 +409,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
     service: 'Hospitalist',
     content: '',
   })
-  
+
   // New feature states
   const [showEditModeDialog, setShowEditModeDialog] = useState(false)
   const [useSmartBuilder, setUseSmartBuilder] = useState(true)
@@ -382,14 +419,14 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
   const [addendumContent, setAddendumContent] = useState('')
   const [showCosignDialog, setShowCosignDialog] = useState(false)
   const [showAttestDialog, setShowAttestDialog] = useState(false)
-  
+
   // Current user (mock)
   const currentUser = { name: 'Dr. Current User', role: 'Physician' }
-  
+
   // Group notes based on sort selection
   const groupedNotes = useMemo(() => {
     const groups: Record<string, Note[]> = {}
-    
+
     notes.forEach(note => {
       let key: string
       switch (sortBy) {
@@ -406,18 +443,18 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         default:
           key = note.service
       }
-      
+
       if (!groups[key]) groups[key] = []
       groups[key].push(note)
     })
-    
+
     const sortedKeys = Object.keys(groups).sort((a, b) => {
       if (sortBy === 'date') {
         return new Date(b).getTime() - new Date(a).getTime()
       }
       return a.localeCompare(b)
     })
-    
+
     return sortedKeys.map(key => ({ key, notes: groups[key] }))
   }, [notes, sortBy])
 
@@ -438,7 +475,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
   const formatTime = (date: Date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
   const isOwnNote = (note: Note) => note.author === currentUser.name
-  
+
   const hasOtherEditors = (note: Note) => {
     if (!note.versions) return false
     return note.versions.some(v => v.author !== note.author)
@@ -461,7 +498,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
       }
     }
   }
-  
+
   const handleEditModeSelect = (mode: 'smart' | 'plain') => {
     setShowEditModeDialog(false)
     if (selectedNote) {
@@ -477,7 +514,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
       }
     }
   }
-  
+
   const handleCopyNote = (noteToCopy: Note) => {
     setNewNote({
       type: noteToCopy.type,
@@ -488,7 +525,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
     setIsCreating(true)
     setSelectedNote(null)
   }
-  
+
   const handleAddAddendum = () => {
     if (selectedNote && addendumContent.trim()) {
       const addendum: Addendum = {
@@ -498,8 +535,8 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         date: new Date(),
         content: addendumContent,
       }
-      const updatedNotes = notes.map(n => 
-        n.id === selectedNote.id 
+      const updatedNotes = notes.map(n =>
+        n.id === selectedNote.id
           ? { ...n, addendums: [...(n.addendums || []), addendum] }
           : n
       )
@@ -509,7 +546,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
       setShowAddendumEditor(false)
     }
   }
-  
+
   const handleCosign = () => {
     if (selectedNote) {
       const cosigner = { name: currentUser.name, role: currentUser.role, date: new Date() }
@@ -520,25 +557,25 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         date: new Date(),
         action: 'cosigned',
       }
-      const updatedNotes = notes.map(n => 
-        n.id === selectedNote.id 
-          ? { 
-              ...n, 
-              cosigners: [...(n.cosigners || []), cosigner],
-              versions: [...(n.versions || []), version]
-            }
+      const updatedNotes = notes.map(n =>
+        n.id === selectedNote.id
+          ? {
+            ...n,
+            cosigners: [...(n.cosigners || []), cosigner],
+            versions: [...(n.versions || []), version]
+          }
           : n
       )
       setNotes(updatedNotes)
-      setSelectedNote({ 
-        ...selectedNote, 
+      setSelectedNote({
+        ...selectedNote,
         cosigners: [...(selectedNote.cosigners || []), cosigner],
         versions: [...(selectedNote.versions || []), version]
       })
       setShowCosignDialog(false)
     }
   }
-  
+
   const handleAttest = () => {
     if (selectedNote) {
       const attestation = { name: currentUser.name, role: currentUser.role, date: new Date() }
@@ -549,18 +586,18 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         date: new Date(),
         action: 'attested',
       }
-      const updatedNotes = notes.map(n => 
-        n.id === selectedNote.id 
-          ? { 
-              ...n, 
-              attestations: [...(n.attestations || []), attestation],
-              versions: [...(n.versions || []), version]
-            }
+      const updatedNotes = notes.map(n =>
+        n.id === selectedNote.id
+          ? {
+            ...n,
+            attestations: [...(n.attestations || []), attestation],
+            versions: [...(n.versions || []), version]
+          }
           : n
       )
       setNotes(updatedNotes)
-      setSelectedNote({ 
-        ...selectedNote, 
+      setSelectedNote({
+        ...selectedNote,
         attestations: [...(selectedNote.attestations || []), attestation],
         versions: [...(selectedNote.versions || []), version]
       })
@@ -577,22 +614,22 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
         date: new Date(),
         action: 'edited',
       }
-      const updatedNotes = notes.map(n => 
-        n.id === selectedNote.id 
-          ? { 
-              ...n, 
-              content: editContent, 
-              status, 
-              date: new Date(),
-              versions: [...(n.versions || []), version]
-            }
+      const updatedNotes = notes.map(n =>
+        n.id === selectedNote.id
+          ? {
+            ...n,
+            content: editContent,
+            status,
+            date: new Date(),
+            versions: [...(n.versions || []), version]
+          }
           : n
       )
       setNotes(updatedNotes)
-      setSelectedNote({ 
-        ...selectedNote, 
-        content: editContent, 
-        status, 
+      setSelectedNote({
+        ...selectedNote,
+        content: editContent,
+        status,
         date: new Date(),
         versions: [...(selectedNote.versions || []), version]
       })
@@ -676,7 +713,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
               </Button>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <SortAsc className="h-3 w-3" /> Sort:
@@ -691,7 +728,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
             </Tabs>
           </div>
         </CardHeader>
-        
+
         <CardContent className="p-0 flex-1 overflow-y-auto">
           <div className="divide-y">
             {groupedNotes.map(group => (
@@ -711,16 +748,15 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
                   </div>
                   <ChevronsDown className="h-4 w-4 text-blue-500" />
                 </button>
-                
+
                 {expandedGroups.has(group.key) && (
                   <div className="bg-white">
                     {group.notes.map(note => (
                       <button
                         key={note.id}
                         onClick={() => { setSelectedNote(note); setIsEditing(false); setIsCreating(false); }}
-                        className={`w-full text-left px-4 py-2 border-l-4 hover:bg-blue-50 transition-colors ${
-                          selectedNote?.id === note.id ? 'bg-blue-50 border-l-blue-500' : 'border-l-transparent'
-                        }`}
+                        className={`w-full text-left px-4 py-2 border-l-4 hover:bg-blue-50 transition-colors ${selectedNote?.id === note.id ? 'bg-blue-50 border-l-blue-500' : 'border-l-transparent'
+                          }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -746,11 +782,11 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Right Panel - Note Content/Edit */}
       <Card className="flex-1 flex flex-col overflow-hidden">
         {isCreating && useSmartBuilder ? (
-          <SOAPNoteEditor 
+          <SOAPNoteEditor
             patientId={patientId}
             existingNote={selectedNote ? {
               id: selectedNote.id,
@@ -810,13 +846,13 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
                 <Button variant="ghost" size="sm" onClick={handleCancelCreate}><X className="h-4 w-4" /></Button>
               </div>
               <div className="flex gap-2 mt-2">
-                <Select value={newNote.type} onValueChange={v => setNewNote({...newNote, type: v})}>
+                <Select value={newNote.type} onValueChange={v => setNewNote({ ...newNote, type: v })}>
                   <SelectTrigger className="w-40 h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {noteTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Select value={newNote.service} onValueChange={v => setNewNote({...newNote, service: v})}>
+                <Select value={newNote.service} onValueChange={v => setNewNote({ ...newNote, service: v })}>
                   <SelectTrigger className="w-48 h-8"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {services.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -826,13 +862,13 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
               {/* Template buttons */}
               <div className="flex gap-2 mt-2">
                 <span className="text-xs text-muted-foreground self-center">Templates:</span>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({...newNote, type: 'H&P', content: plainTextTemplates.hp})}>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({ ...newNote, type: 'H&P', content: plainTextTemplates.hp })}>
                   H&P
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({...newNote, type: 'Progress Note', content: plainTextTemplates.progress})}>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({ ...newNote, type: 'Progress Note', content: plainTextTemplates.progress })}>
                   Progress Note
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({...newNote, type: 'Discharge Summary', content: plainTextTemplates.discharge})}>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setNewNote({ ...newNote, type: 'Discharge Summary', content: plainTextTemplates.discharge })}>
                   Discharge Summary
                 </Button>
               </div>
@@ -845,7 +881,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
               <textarea
                 className="flex-1 w-full p-3 border rounded-md text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={newNote.content}
-                onChange={e => setNewNote({...newNote, content: e.target.value})}
+                onChange={e => setNewNote({ ...newNote, content: e.target.value })}
                 placeholder="Enter note content... Use ***placeholder*** for fields to fill."
               />
               <div className="flex justify-between mt-3">
@@ -857,9 +893,9 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => handleSaveNew('draft')}><Save className="h-3 w-3 mr-1" /> Draft</Button>
                   <Button variant="outline" size="sm" onClick={() => handleSaveNew('pended')} className="text-yellow-700"><Clock className="h-3 w-3 mr-1" /> Pend</Button>
-                  <Button 
-                    size="sm" 
-                    onClick={() => handleSaveNew('signed')} 
+                  <Button
+                    size="sm"
+                    onClick={() => handleSaveNew('signed')}
                     className={newNote.content.includes('***') ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"}
                     disabled={newNote.content.includes('***')}
                   >
@@ -992,7 +1028,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </CardContent>
         )}
       </Card>
-      
+
       {/* Edit Mode Dialog */}
       {showEditModeDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1021,7 +1057,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </div>
       )}
-      
+
       {/* Copy Previous Note Dialog */}
       {showCopyDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1049,7 +1085,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </div>
       )}
-      
+
       {/* Version History Dialog */}
       {showVersionHistory && selectedNote?.versions && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1079,7 +1115,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </div>
       )}
-      
+
       {/* Addendum Editor Dialog */}
       {showAddendumEditor && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1101,7 +1137,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </div>
       )}
-      
+
       {/* Cosign Dialog */}
       {showCosignDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -1110,7 +1146,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
               <UserCheck className="h-5 w-5" /> Cosign Note
             </h3>
             <p className="text-sm text-muted-foreground mb-4">
-              You are about to cosign this note by <strong>{selectedNote?.author}</strong>. 
+              You are about to cosign this note by <strong>{selectedNote?.author}</strong>.
               This indicates you have reviewed and agree with the note content.
             </p>
             <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm mb-4">
@@ -1124,7 +1160,7 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
           </div>
         </div>
       )}
-      
+
       {/* Attest Dialog */}
       {showAttestDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

@@ -13,15 +13,15 @@
 | Create Next.js project with TypeScript and Tailwind | ✅ Done | |
 | Install all dependencies | ✅ Done | |
 | Configure shadcn/ui components | ✅ Done | 15+ components |
-| Create docker-compose.yml with all services | ✅ Done | Medplum, PostgreSQL, Redis |
+| Create docker-compose.yml with all services | ✅ Done | FHIR backend, PostgreSQL, Redis |
 | Set up environment variables | ✅ Done | .env.local, .env.example |
 | Create Prisma schema and run migrations | ✅ Done | schema.prisma exists |
-| Verify Medplum FHIR server starts and responds | ⚠️ Needs Testing | Docker setup exists |
+| Verify Aidbox FHIR server starts and responds | ⚠️ Needs Testing | Docker setup exists |
 | Create README.md with quickstart instructions | ✅ Done | |
 
 **Next Steps:**
 - Test Docker Compose startup end-to-end
-- Verify Medplum healthcheck endpoint
+- Verify Aidbox healthcheck endpoint
 
 ---
 
@@ -139,7 +139,7 @@
 
 | Deliverable | Status | Notes |
 |-------------|--------|-------|
-| Create synthetic patient seeding script (20+ patients) | ✅ Done | `seed-fhir.ts` has 23 patients with comprehensive data |
+| Create synthetic patient seeding script (20+ patients) | ✅ Done | `seed-aidbox.ts` seeds Aidbox with synthetic patients |
 | Create setup.sh one-command script | ✅ Done | |
 | Add variety of discharge readiness states | ✅ Done | In mock data |
 | Include pending tests and open consults | ⚠️ Partial | |

@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getFhirClient } from '@/lib/fhir/client'
-import { getDischargeSnapshot } from '@/lib/fhir/queries'
-import { mockLLMRequest } from '@/lib/llm/client'
 import type { DischargeReadinessOutput } from '@/lib/llm/schemas'
 
 export async function GET(
@@ -9,38 +6,17 @@ export async function GET(
   { params }: { params: { encounterId: string } }
 ) {
   try {
-    const { encounterId } = params
-
-    // Get discharge snapshot from FHIR
-    const fhirClient = getFhirClient()
-    
-    let snapshot
-    try {
-      snapshot = await getDischargeSnapshot(fhirClient, encounterId)
-    } catch (error) {
-      // Return mock data if FHIR is not available
-      console.log('FHIR not available, returning mock data')
-      return NextResponse.json({
-        success: true,
-        data: getMockDischargeReadiness(),
-        mock: true,
-      })
-    }
-
-    // For demo, return mock LLM response
-    // In production, would call: llmRequest({ systemPrompt, userPrompt, outputSchema })
+    // For demo purposes, always return mock data
+    // In production, this would integrate with FHIR and LLM
     const mockResponse = getMockDischargeReadiness()
-    const response = await mockLLMRequest<DischargeReadinessOutput>(mockResponse)
+
+    // Simulate a small delay for realism
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     return NextResponse.json({
       success: true,
-      data: response.data,
-      snapshot: {
-        clinicalStability: snapshot.clinicalStability,
-        workupCompleteness: snapshot.workupCompleteness,
-      },
-      usage: response.usage,
-      latencyMs: response.latencyMs,
+      data: mockResponse,
+      mock: true,
     })
   } catch (error) {
     console.error('Discharge readiness error:', error)

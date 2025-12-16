@@ -21,9 +21,9 @@ const STATIC_DATE = '2024-01-01T00:00:00.000Z'
 // Default lists that come pre-configured
 const DEFAULT_LISTS: PatientList[] = [
   {
-    id: 'all-patients',
-    name: 'All Patients',
-    description: 'All active patients',
+    id: 'mock-patients',
+    name: 'Mock Patients',
+    description: 'Synthetic demo patients',
     color: '#3B82F6',
     icon: 'users',
     patientIds: [],
@@ -64,6 +64,17 @@ const DEFAULT_LISTS: PatientList[] = [
     updatedAt: STATIC_DATE,
     isDefault: true,
   },
+  {
+    id: 'aidbox-patients',
+    name: 'Aidbox Patients',
+    description: 'Live patients from Aidbox',
+    color: '#06B6D4',
+    icon: 'activity',
+    patientIds: [],
+    createdAt: STATIC_DATE,
+    updatedAt: STATIC_DATE,
+    isDefault: true,
+  },
 ]
 
 // Get all patient lists
@@ -72,13 +83,23 @@ export function getPatientLists(): PatientList[] {
   
   const stored = localStorage.getItem(STORAGE_KEY)
   if (!stored) {
-    // Initialize with defaults
     localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_LISTS))
     return DEFAULT_LISTS
   }
   
   try {
-    return JSON.parse(stored)
+    let parsed: PatientList[] = JSON.parse(stored)
+    // Remove legacy list ids
+    parsed = parsed.filter((l) => l.id !== 'all-patients')
+    // Ensure default lists exist
+    const byId = new Map(parsed.map((l) => [l.id, l]))
+    DEFAULT_LISTS.forEach((d) => {
+      if (!byId.has(d.id)) {
+        parsed.push(d)
+      }
+    })
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed))
+    return parsed
   } catch {
     return DEFAULT_LISTS
   }
@@ -202,4 +223,3 @@ export const LIST_ICONS = [
   'folder',
   'bookmark',
 ]
-

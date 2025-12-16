@@ -1,14 +1,16 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Calendar, CalendarEvent } from '@/components/base/Calendar'
 import { SearchBar, patientFilters } from '@/components/base/SearchBar'
 import { ResourceTable, appointmentColumns, viewAction, editAction } from '@/components/base/ResourceTable'
+import { useAllAppointments } from '@/hooks/useFHIRData'
+import type { Appointment } from '@medplum/fhirtypes'
 import {
-  Plus, Calendar as CalendarIcon, List, Grid, 
+  Plus, Calendar as CalendarIcon, List, Grid,
   Clock, User, MapPin, Video, Phone, Sparkles, X
 } from 'lucide-react'
 import {
@@ -116,16 +118,68 @@ const initialFormState: NewAppointmentForm = {
   notes: ''
 }
 
+// Convert FHIR Appointment to CalendarEvent
+function fhirToCalendarEvent(apt: Appointment): CalendarEvent {
+  const startDate = apt.start ? new Date(apt.start) : new Date()
+  const endDate = apt.end ? new Date(apt.end) : new Date(startDate.getTime() + 30 * 60000)
+  const patientName = apt.participant?.find(p => p.actor?.reference?.startsWith('Patient'))?.actor?.display || 'Unknown Patient'
+  const practitionerName = apt.participant?.find(p => p.actor?.reference?.startsWith('Practitioner'))?.actor?.display || 'Unknown Provider'
+  const aptType = apt.serviceType?.[0]?.text || apt.appointmentType?.text || 'routine'
+
+  return {
+    id: apt.id || `apt-${Date.now()}`,
+    title: `${patientName} - ${aptType}`,
+    start: startDate,
+    end: endDate,
+    extendedProps: {
+      patientId: apt.participant?.find(p => p.actor?.reference?.startsWith('Patient'))?.actor?.reference?.split('/')[1] || '',
+      patientName,
+      practitionerId: apt.participant?.find(p => p.actor?.reference?.startsWith('Practitioner'))?.actor?.reference?.split('/')[1] || '',
+      practitionerName,
+      status: apt.status || 'booked',
+      type: aptType,
+      notes: apt.comment || '',
+    }
+  }
+}
+
 export default function AppointmentsPage() {
+  // FHIR appointments hook
+  const { data: fhirAppointments, isLoading: isLoadingFhir } = useAllAppointments()
+
   const [view, setView] = useState<'calendar' | 'list'>('calendar')
   const [showNewAppointment, setShowNewAppointment] = useState(false)
   const [selectedAppointment, setSelectedAppointment] = useState<CalendarEvent | null>(null)
-  const [appointments, setAppointments] = useState<CalendarEvent[]>(mockAppointments)
+  const [localAppointments, setLocalAppointments] = useState<CalendarEvent[]>([])
   const [newAppointment, setNewAppointment] = useState<NewAppointmentForm>(initialFormState)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '' })
+
+  // Combine FHIR appointments with local state
+  const appointments = useMemo(() => {
+    const fhirEvents = (fhirAppointments || []).map(fhirToCalendarEvent)
+    // Use FHIR data if available, else fallback to mock
+    if (fhirEvents.length > 0) {
+      return [...fhirEvents, ...localAppointments]
+    }
+    return [...mockAppointments, ...localAppointments]
+  }, [fhirAppointments, localAppointments])
+
+  // For mutations, we update local state
+  const setAppointments = (updater: CalendarEvent[] | ((prev: CalendarEvent[]) => CalendarEvent[])) => {
+    if (typeof updater === 'function') {
+      setLocalAppointments(prev => {
+        const all = [...(fhirAppointments || []).map(fhirToCalendarEvent), ...prev]
+        const updated = updater(all)
+        // Only keep locally-created appointments in local state
+        return updated.filter(apt => !fhirAppointments?.find(f => f.id === apt.id))
+      })
+    } else {
+      setLocalAppointments(updater.filter(apt => !fhirAppointments?.find(f => f.id === apt.id)))
+    }
+  }
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedAppointment(event)
@@ -144,7 +198,7 @@ export default function AppointmentsPage() {
   const handleCreateAppointment = () => {
     const startDate = new Date(`${newAppointment.date}T${newAppointment.time}`)
     const endDate = new Date(startDate.getTime() + parseInt(newAppointment.duration) * 60000)
-    
+
     const newApt: CalendarEvent = {
       id: `apt-${Date.now()}`,
       title: `${newAppointment.patientName} - ${newAppointment.type.replace('-', ' ')}`,
@@ -160,7 +214,7 @@ export default function AppointmentsPage() {
         notes: newAppointment.notes
       }
     }
-    
+
     setAppointments(prev => [...prev, newApt])
     setShowNewAppointment(false)
     setNewAppointment(initialFormState)
@@ -186,9 +240,9 @@ export default function AppointmentsPage() {
       const oldEnd = endVal ? (endVal instanceof Date ? endVal : new Date(endVal as string)) : new Date(oldStart.getTime() + 30 * 60000)
       const duration = oldEnd.getTime() - oldStart.getTime()
       const newEnd = new Date(newStart.getTime() + duration)
-      
-      setAppointments(prev => prev.map(apt => 
-        apt.id === selectedAppointment.id 
+
+      setAppointments(prev => prev.map(apt =>
+        apt.id === selectedAppointment.id
           ? { ...apt, start: newStart, end: newEnd }
           : apt
       ))
@@ -203,14 +257,14 @@ export default function AppointmentsPage() {
 
   const handleConfirmCancel = () => {
     if (selectedAppointment) {
-      setAppointments(prev => prev.map(apt => 
-        apt.id === selectedAppointment.id 
+      setAppointments(prev => prev.map(apt =>
+        apt.id === selectedAppointment.id
           ? { ...apt, extendedProps: { ...apt.extendedProps, status: 'cancelled' } }
           : apt
       ))
-      setSelectedAppointment({ 
-        ...selectedAppointment, 
-        extendedProps: { ...selectedAppointment.extendedProps, status: 'cancelled' } 
+      setSelectedAppointment({
+        ...selectedAppointment,
+        extendedProps: { ...selectedAppointment.extendedProps, status: 'cancelled' }
       })
       setCancelDialogOpen(false)
     }
@@ -218,14 +272,14 @@ export default function AppointmentsPage() {
 
   const handleCheckIn = () => {
     if (selectedAppointment) {
-      setAppointments(prev => prev.map(apt => 
-        apt.id === selectedAppointment.id 
+      setAppointments(prev => prev.map(apt =>
+        apt.id === selectedAppointment.id
           ? { ...apt, extendedProps: { ...apt.extendedProps, status: 'arrived' } }
           : apt
       ))
-      setSelectedAppointment({ 
-        ...selectedAppointment, 
-        extendedProps: { ...selectedAppointment.extendedProps, status: 'arrived' } 
+      setSelectedAppointment({
+        ...selectedAppointment,
+        extendedProps: { ...selectedAppointment.extendedProps, status: 'arrived' }
       })
     }
   }
@@ -384,13 +438,13 @@ export default function AppointmentsPage() {
                   {selectedAppointment.extendedProps?.practitionerName}
                 </div>
                 <Badge className="capitalize">{selectedAppointment.extendedProps?.status}</Badge>
-                
+
                 {selectedAppointment.extendedProps?.notes && (
                   <div className="p-2 bg-slate-50 rounded text-sm">
                     {selectedAppointment.extendedProps.notes}
                   </div>
                 )}
-                
+
                 <div className="flex gap-2 pt-2 flex-wrap">
                   {selectedAppointment.extendedProps?.status === 'cancelled' ? (
                     <Badge variant="destructive">Cancelled</Badge>

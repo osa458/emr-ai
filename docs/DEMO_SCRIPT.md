@@ -131,7 +131,7 @@
 ## 10. Technical Stack (30 seconds)
 
 **Narration:**
-> "Under the hood, EMR AI uses Next.js 14, TypeScript, Tailwind CSS, shadcn/ui components, Medplum FHIR server, and OpenAI GPT-4 for AI features. The codebase includes 57 unit tests and comprehensive rate limiting."
+> "Under the hood, EMR AI uses Next.js 14, TypeScript, Tailwind CSS, shadcn/ui components, an Aidbox FHIR backend, and OpenAI GPT-4 for AI features. The codebase includes 57 unit tests and comprehensive rate limiting."
 
 **Actions:**
 - (Optional) Show terminal with `npm test` running

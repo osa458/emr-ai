@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------
+// Core domain models
+// ---------------------------------------------------------
+
 // User accounts
 model User {
   id            String    @id @default(cuid())
@@ -235,6 +239,97 @@ model InvoiceItem {
   quantity    Int      @default(1)
   unitPrice   Decimal  @db.Decimal(10, 2)
   total       Decimal  @db.Decimal(10, 2)
+}
+
+// ---------------------------------------------------------
+// Medication catalog & inventory (warehouse)
+// ---------------------------------------------------------
+
+/// Catalog of medications available in the organization.
+/// Links to FDA / FHIR Medication definitions via NDC and FHIR Medication ID.
+model MedicationCatalog {
+  id              String   @id @default(cuid())
+
+  /// Human-friendly name (usually brand or generic)
+  name            String
+
+  /// Primary NDC code for this medication (links to FDA + FHIR Medication.code.coding[system=ndc])
+  ndcCode         String   @unique
+
+  /// Optional RxNorm code if known
+  rxCui           String?
+
+  /// Dosage form (tablet, capsule, solution, etc.)
+  form            String?
+
+  /// Strength (e.g. "10 mg", "1 mg/mL")
+  strength        String?
+
+  /// Link to the canonical FHIR Medication in Aidbox, if created there
+  fhirMedicationId String? // e.g. "Medication/1234567890"
+
+  /// Whether this medication is currently on formulary / orderable
+  active          Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  inventoryItems  MedicationInventory[]
+}
+
+/// Inventory of medications by location (e.g. central pharmacy, Pyxis cabinet, clinic).
+model MedicationInventory {
+  id               String   @id @default(cuid())
+
+  catalogId        String
+  catalog          MedicationCatalog @relation(fields: [catalogId], references: [id])
+
+  /// Location identifier (pharmacy, unit, cabinet, etc.)
+  location         String
+
+  /// Optional lot / batch identifier
+  lotNumber        String?
+
+  /// Optional expiration date
+  expiresAt        DateTime?
+
+  /// On-hand quantity for this lot/location
+  quantityOnHand   Int      @default(0)
+
+  /// Minimum stock before triggering low-inventory warning
+  reorderLevel     Int      @default(0)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  transactions     MedicationTransaction[]
+}
+
+/// Individual inventory movements (receipts, dispenses, adjustments).
+model MedicationTransaction {
+  id               String   @id @default(cuid())
+
+  inventoryId      String
+  inventory        MedicationInventory @relation(fields: [inventoryId], references: [id])
+
+  /// Type of transaction (RECEIPT increases stock, DISPENSE decreases, ADJUST can be +/-)
+  type             MedicationTransactionType
+
+  /// Quantity delta (positive or negative)
+  quantityDelta    Int
+
+  /// Optional free-text reason (e.g. "Initial stock", "Dispensed for Encounter/123")
+  reason           String?
+
+  createdAt        DateTime @default(now())
+}
+
+enum MedicationTransactionType {
+  RECEIPT
+  DISPENSE
+  ADJUST
 }
 
 // Audit log for compliance

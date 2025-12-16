@@ -16,8 +16,8 @@ import {
 } from '@beda.software/fhir-react'
 import type { Resource, Bundle, Patient, Observation, MedicationRequest, Encounter, Condition } from '@medplum/fhirtypes'
 
-// Initialize FHIR services - will connect to Medplum when available
-const FHIR_BASE_URL = process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103/fhir/R4'
+// Initialize FHIR services - Aidbox default
+const FHIR_BASE_URL = process.env.NEXT_PUBLIC_AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_FHIR_BASE_URL || 'https://aoadhslfxc.edge.aidbox.app'
 
 let fhirServices: ReturnType<typeof initServices> | null = null
 

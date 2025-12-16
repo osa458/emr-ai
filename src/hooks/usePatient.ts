@@ -8,16 +8,17 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Patient } from '@medplum/fhirtypes'
 
-const FHIR_BASE = process.env.NEXT_PUBLIC_MEDPLUM_BASE_URL || 'http://localhost:8103/fhir/R4'
+const FHIR_BASE = process.env.NEXT_PUBLIC_AIDBOX_BASE_URL ||
+  process.env.NEXT_PUBLIC_FHIR_BASE_URL ||
+  'https://aoadhslfxc.edge.aidbox.app'
 
 async function fetchPatient(patientId: string): Promise<Patient> {
-  const response = await fetch(`${FHIR_BASE}/Patient/${patientId}`, {
-    headers: { 'Content-Type': 'application/fhir+json' },
-  })
-  if (!response.ok) {
-    throw new Error(`Failed to fetch patient: ${response.status}`)
+  const response = await fetch(`/api/fhir/patients?id=${patientId}`)
+  const data = await response.json()
+  if (!data.success) {
+    throw new Error(data.error || 'Failed to fetch patient')
   }
-  return response.json()
+  return data.data as Patient
 }
 
 export function usePatient(patientId: string | undefined) {
@@ -29,25 +30,24 @@ export function usePatient(patientId: string | undefined) {
   })
 }
 
-export function usePatients(options: { name?: string; _count?: number } = {}) {
+export function usePatients(options: { name?: string; _count?: number; page?: number } = {}) {
   return useQuery({
     queryKey: ['patients', options],
     queryFn: async () => {
       const params = new URLSearchParams()
       if (options.name) params.append('name', options.name)
       if (options._count) params.append('_count', options._count.toString())
-      
+      if (options.page) params.append('page', options.page.toString())
+
       const query = params.toString()
-      const url = query ? `${FHIR_BASE}/Patient?${query}` : `${FHIR_BASE}/Patient`
-      
-      const response = await fetch(url, {
-        headers: { 'Content-Type': 'application/fhir+json' },
-      })
-      if (!response.ok) {
-        throw new Error(`Failed to fetch patients: ${response.status}`)
+      const url = query ? `/api/fhir/patients?${query}` : '/api/fhir/patients'
+
+      const response = await fetch(url)
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch patients')
       }
-      const bundle = await response.json()
-      return (bundle.entry || []).map((e: any) => e.resource as Patient)
+      return { patients: data.data as Patient[], total: data.total as number }
     },
     staleTime: 2 * 60 * 1000,
   })
