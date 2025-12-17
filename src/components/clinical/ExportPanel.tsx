@@ -109,7 +109,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="problems"
                       checked={options.includeProblems}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeProblems: !!c })
@@ -121,7 +120,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="allergies"
                       checked={options.includeAllergies}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeAllergies: !!c })
@@ -133,7 +131,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="medications"
                       checked={options.includeMedications}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeMedications: !!c })
@@ -145,7 +142,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="vitals"
                       checked={options.includeVitals}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeVitals: !!c })
@@ -157,7 +153,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="labs"
                       checked={options.includeLabs}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeLabs: !!c })
@@ -169,7 +164,6 @@ export function ExportPanel({ patientData }: ExportPanelProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Checkbox
-                      id="notes"
                       checked={options.includeNotes}
                       onCheckedChange={(c) =>
                         setOptions({ ...options, includeNotes: !!c })

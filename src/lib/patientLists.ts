@@ -21,6 +21,28 @@ const STATIC_DATE = '2024-01-01T00:00:00.000Z'
 // Default lists that come pre-configured
 const DEFAULT_LISTS: PatientList[] = [
   {
+    id: 'my-patients',
+    name: 'My Patients',
+    description: 'Patients with rich FHIR data for testing',
+    color: '#10B981',
+    icon: 'user-check',
+    patientIds: [
+      '04fa9220-931b-6504-1444-5523f8f25710', // Dorthey Eichmann - 68y female, HTN/Osteoporosis/Depression
+      '0413360c-f05b-adaf-16de-3c9dfe7170d4', // Heriberto Murazik - 54y male, HTN/Hyperlipidemia
+      '01a12c22-f97a-2804-90f6-d77b5c68387c', // Preston Yundt - 31y male, HTN/Hyperlipidemia
+      '0337ce1a-4012-7e62-99dc-2547d449bef7', // Rhett Bechtelar - 33y male, HTN/Hyperlipidemia
+      '03c85a2f-23d9-8f25-63f1-580a1bddae72', // Kimbery Strosin - 23y female, Migraine/Anxiety
+      '5ab3b247-dc11-35cb-3ed6-8be889f6ccbe', // Robby Koepp - 11y male, Asthma/ADHD
+      '2193c2e7-4d66-74c6-17c5-6d0c1c094fc2', // Creola Franecki - 9y female, Allergies
+      '5994d754-de6b-5333-884a-073f55fcd358', // Del Luettgen - 6y male, Asthma
+      '625d1b5b-21d6-b1e9-931f-bcb1d02c1b10', // Joleen Stiedemann - 13y female, Eczema
+      '88cba6af-295e-add7-7a7c-59972c18a866', // Candra Grant - 11y female, Allergies
+    ],
+    createdAt: STATIC_DATE,
+    updatedAt: STATIC_DATE,
+    isDefault: true,
+  },
+  {
     id: 'mock-patients',
     name: 'Mock Patients',
     description: 'Synthetic demo patients',
@@ -32,23 +54,14 @@ const DEFAULT_LISTS: PatientList[] = [
     isDefault: true,
   },
   {
-    id: 'my-patients',
-    name: 'My Patients',
-    description: 'Patients assigned to me',
-    color: '#10B981',
-    icon: 'user-check',
-    patientIds: ['1', '2', '3'],
-    createdAt: STATIC_DATE,
-    updatedAt: STATIC_DATE,
-    isDefault: true,
-  },
-  {
     id: 'critical',
     name: 'Critical',
     description: 'Patients requiring close monitoring',
     color: '#EF4444',
     icon: 'alert-triangle',
-    patientIds: ['1'],
+    patientIds: [
+      '04fa9220-931b-6504-1444-5523f8f25710', // Dorthey Eichmann - elderly with multiple conditions
+    ],
     createdAt: STATIC_DATE,
     updatedAt: STATIC_DATE,
     isDefault: true,
@@ -59,7 +72,9 @@ const DEFAULT_LISTS: PatientList[] = [
     description: 'Patients ready or near ready for discharge',
     color: '#F59E0B',
     icon: 'log-out',
-    patientIds: ['2'],
+    patientIds: [
+      '03c85a2f-23d9-8f25-63f1-580a1bddae72', // Kimbery Strosin - stable young adult
+    ],
     createdAt: STATIC_DATE,
     updatedAt: STATIC_DATE,
     isDefault: true,
@@ -70,7 +85,18 @@ const DEFAULT_LISTS: PatientList[] = [
     description: 'Live patients from Aidbox',
     color: '#06B6D4',
     icon: 'activity',
-    patientIds: [],
+    patientIds: [
+      '04fa9220-931b-6504-1444-5523f8f25710',
+      '0413360c-f05b-adaf-16de-3c9dfe7170d4',
+      '01a12c22-f97a-2804-90f6-d77b5c68387c',
+      '0337ce1a-4012-7e62-99dc-2547d449bef7',
+      '03c85a2f-23d9-8f25-63f1-580a1bddae72',
+      '5ab3b247-dc11-35cb-3ed6-8be889f6ccbe',
+      '2193c2e7-4d66-74c6-17c5-6d0c1c094fc2',
+      '5994d754-de6b-5333-884a-073f55fcd358',
+      '625d1b5b-21d6-b1e9-931f-bcb1d02c1b10',
+      '88cba6af-295e-add7-7a7c-59972c18a866',
+    ],
     createdAt: STATIC_DATE,
     updatedAt: STATIC_DATE,
     isDefault: true,
@@ -91,11 +117,16 @@ export function getPatientLists(): PatientList[] {
     let parsed: PatientList[] = JSON.parse(stored)
     // Remove legacy list ids
     parsed = parsed.filter((l) => l.id !== 'all-patients')
-    // Ensure default lists exist
+    // Ensure default lists exist and have correct patient IDs
     const byId = new Map(parsed.map((l) => [l.id, l]))
     DEFAULT_LISTS.forEach((d) => {
       if (!byId.has(d.id)) {
         parsed.push(d)
+      } else if (d.isDefault) {
+        // Update default lists with current patient IDs
+        const existing = byId.get(d.id)!
+        existing.patientIds = d.patientIds
+        existing.description = d.description
       }
     })
     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed))

@@ -115,7 +115,7 @@ export function VoiceCommand({ isActive, onToggle, onCommand, patientName }: Voi
         recognition.interimResults = true
         recognition.lang = 'en-US'
 
-        recognition.onresult = (event) => {
+        recognition.onresult = (event: any) => {
           const result = event.results[event.results.length - 1]
           const text = result[0].transcript
 
@@ -148,7 +148,7 @@ export function VoiceCommand({ isActive, onToggle, onCommand, patientName }: Voi
           }
         }
 
-        recognition.onerror = (event) => {
+        recognition.onerror = (event: any) => {
           console.error('Speech recognition error:', event.error)
           if (event.error !== 'no-speech') {
             setStatus('error')
@@ -272,10 +272,10 @@ export function VoiceCommand({ isActive, onToggle, onCommand, patientName }: Voi
             <span className="text-xs text-white font-medium">Listening...</span>
           </div>
           <p className="text-xs text-slate-400">
-            Say <span className="text-white font-medium">"Hey EMR"</span> followed by a command
+            Say <span className="text-white font-medium">&quot;Hey EMR&quot;</span> followed by a command
           </p>
           {transcript && (
-            <p className="text-xs text-slate-300 mt-2 italic">"{transcript}"</p>
+            <p className="text-xs text-slate-300 mt-2 italic">&quot;{transcript}&quot;</p>
           )}
         </div>
       )}
@@ -286,8 +286,20 @@ export function VoiceCommand({ isActive, onToggle, onCommand, patientName }: Voi
 // Type declarations for Web Speech API
 declare global {
   interface Window {
-    SpeechRecognition: typeof SpeechRecognition
-    webkitSpeechRecognition: typeof SpeechRecognition
+    SpeechRecognition: any
+    webkitSpeechRecognition: any
   }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start(): void
+  stop(): void
+  abort(): void
+  onresult: (event: any) => void
+  onerror: (event: any) => void
+  onend: () => void
 }
 

@@ -14,11 +14,14 @@ import {
     type NoteStatus,
 } from '@/lib/fhir/resources/clinical-note-types'
 
-const FHIR_BASE = process.env.NEXT_PUBLIC_AIDBOX_BASE_URL ||
-    process.env.NEXT_PUBLIC_FHIR_BASE_URL ||
-    'https://aoadhslfxc.edge.aidbox.app'
-
-const headers = { 'Content-Type': 'application/fhir+json' }
+// Helper to fetch through the authenticated proxy
+async function fhirFetch(path: string, options?: RequestInit) {
+  const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(path)}`, options)
+  if (!response.ok) {
+    throw new Error(`FHIR request failed: ${response.status}`)
+  }
+  return response.json()
+}
 
 /**
  * Fetch notes for a patient
@@ -27,14 +30,9 @@ export function usePatientNotes(patientId: string | undefined) {
     return useQuery({
         queryKey: ['notes', patientId],
         queryFn: async (): Promise<ClinicalNote[]> => {
-            const response = await fetch(
-                `${FHIR_BASE}/DocumentReference?patient=${patientId}&category=clinical-note&_sort=-date&_count=100`,
-                { headers }
+            const bundle = await fhirFetch(
+                `/DocumentReference?subject=Patient/${patientId}&_sort=-date&_count=100`
             )
-            if (!response.ok) {
-                throw new Error(`Failed to fetch notes: ${response.status}`)
-            }
-            const bundle = await response.json()
             const docs = (bundle.entry || []).map((e: any) => e.resource as DocumentReference)
             return docs.map(documentReferenceToNote)
         },
@@ -50,12 +48,8 @@ export function useNote(noteId: string | undefined) {
     return useQuery({
         queryKey: ['note', noteId],
         queryFn: async (): Promise<ClinicalNote> => {
-            const response = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, { headers })
-            if (!response.ok) {
-                throw new Error(`Failed to fetch note: ${response.status}`)
-            }
-            const doc: DocumentReference = await response.json()
-            return documentReferenceToNote(doc)
+            const doc = await fhirFetch(`/DocumentReference/${noteId}`)
+            return documentReferenceToNote(doc as DocumentReference)
         },
         enabled: !!noteId,
         staleTime: 1 * 60 * 1000,
@@ -80,9 +74,9 @@ export function useCreateNote() {
         }): Promise<ClinicalNote> => {
             const docRef = noteToDocumentReference(note, patientId, encounterId)
 
-            const response = await fetch(`${FHIR_BASE}/DocumentReference`, {
+            const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent('/DocumentReference')}`, {
                 method: 'POST',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(docRef),
             })
             if (!response.ok) {
@@ -117,9 +111,9 @@ export function useUpdateNote() {
         }): Promise<ClinicalNote> => {
             const docRef = noteToDocumentReference(note, patientId, encounterId)
 
-            const response = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, {
+            const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(`/DocumentReference/${noteId}`)}`, {
                 method: 'PUT',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...docRef, id: noteId }),
             })
             if (!response.ok) {
@@ -150,18 +144,14 @@ export function useSignNote() {
             patientId: string
         }): Promise<ClinicalNote> => {
             // First fetch the current note
-            const getResponse = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, { headers })
-            if (!getResponse.ok) {
-                throw new Error(`Failed to fetch note: ${getResponse.status}`)
-            }
-            const doc: DocumentReference = await getResponse.json()
+            const doc = await fhirFetch(`/DocumentReference/${noteId}`) as DocumentReference
 
             // Update status to signed
             doc.docStatus = 'final'
 
-            const response = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, {
+            const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(`/DocumentReference/${noteId}`)}`, {
                 method: 'PUT',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(doc),
             })
             if (!response.ok) {
@@ -198,11 +188,7 @@ export function useAddAddendum() {
             authorRole: string
         }): Promise<ClinicalNote> => {
             // Fetch the current note
-            const getResponse = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, { headers })
-            if (!getResponse.ok) {
-                throw new Error(`Failed to fetch note: ${getResponse.status}`)
-            }
-            const doc: DocumentReference = await getResponse.json()
+            const doc = await fhirFetch(`/DocumentReference/${noteId}`) as DocumentReference
 
             // Convert to note and add addendum
             const note = documentReferenceToNote(doc)
@@ -232,9 +218,9 @@ export function useAddAddendum() {
                 doc.content[0].attachment.data = contentBase64
             }
 
-            const response = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, {
+            const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(`/DocumentReference/${noteId}`)}`, {
                 method: 'PUT',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(doc),
             })
             if (!response.ok) {
@@ -264,18 +250,14 @@ export function useDeleteNote() {
             noteId: string
             patientId: string
         }): Promise<void> => {
-            const getResponse = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, { headers })
-            if (!getResponse.ok) {
-                throw new Error(`Failed to fetch note: ${getResponse.status}`)
-            }
-            const doc: DocumentReference = await getResponse.json()
+            const doc = await fhirFetch(`/DocumentReference/${noteId}`) as DocumentReference
 
             // Mark as entered-in-error (FHIR way of "deleting")
             doc.status = 'entered-in-error'
 
-            const response = await fetch(`${FHIR_BASE}/DocumentReference/${noteId}`, {
+            const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(`/DocumentReference/${noteId}`)}`, {
                 method: 'PUT',
-                headers,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(doc),
             })
             if (!response.ok) {

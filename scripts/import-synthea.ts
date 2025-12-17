@@ -105,7 +105,7 @@ async function main() {
     }
 
     console.log('\nResource types in each patient bundle:')
-    for (const [type, count] of resourceTypes) {
+    for (const [type, count] of Array.from(resourceTypes.entries())) {
         console.log(`  ${type}: ${count}`)
     }
 }

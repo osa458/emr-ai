@@ -132,26 +132,41 @@ export default function PatientsPage() {
     }
   }
 
+  // Format Aidbox patient for display
+  const formatAidboxPatient = (p: any) => ({
+    id: p.id || '',
+    name: formatPatientName(p),
+    mrn: p.identifier?.[0]?.value || 'MRN-N/A',
+    age: p.birthDate ? Math.floor((Date.now() - new Date(p.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 0,
+    gender: p.gender || 'unknown',
+    location: p.address?.[0]?.text || 'Unknown',
+    diagnosis: '—',
+    status: 'moderate',
+    admitDate: p.meta?.lastUpdated || '',
+  })
+
   // Get patients for selected list
   const getListPatients = () => {
     if (selectedListId === 'mock-patients') {
       return mockPatients
     }
     if (selectedListId === 'aidbox-patients') {
-      return aidboxPatients.map((p) => ({
-        id: p.id || '',
-        name: formatPatientName(p),
-        mrn: p.identifier?.[0]?.value || 'MRN-N/A',
-        age: p.birthDate ? Math.floor((Date.now() - new Date(p.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 0,
-        gender: p.gender || 'unknown',
-        location: p.address?.[0]?.text || 'Unknown',
-        diagnosis: '—',
-        status: 'moderate',
-        admitDate: p.meta?.lastUpdated || '',
-      }))
+      return aidboxPatients.map(formatAidboxPatient)
     }
     const list = patientLists.find((l) => l.id === selectedListId)
     if (!list) return mockPatients
+    
+    // Check if list contains Aidbox patient IDs (UUIDs with dashes)
+    const hasAidboxIds = list.patientIds.some(id => id.includes('-') && id.length > 30)
+    
+    if (hasAidboxIds) {
+      // Filter Aidbox patients by list IDs
+      return aidboxPatients
+        .filter((p) => list.patientIds.includes(p.id || ''))
+        .map(formatAidboxPatient)
+    }
+    
+    // Filter mock patients
     return mockPatients.filter((p) => list.patientIds.includes(p.id))
   }
 
@@ -183,9 +198,17 @@ export default function PatientsPage() {
     } else if (list.id === 'aidbox-patients') {
       patientCounts[list.id] = aidboxPatients.length
     } else {
-      patientCounts[list.id] = mockPatients.filter((p) => 
-        list.patientIds.includes(p.id)
-      ).length
+      // Check if list contains Aidbox patient IDs
+      const hasAidboxIds = list.patientIds.some(id => id.includes('-') && id.length > 30)
+      if (hasAidboxIds) {
+        patientCounts[list.id] = aidboxPatients.filter((p) => 
+          list.patientIds.includes(p.id || '')
+        ).length
+      } else {
+        patientCounts[list.id] = mockPatients.filter((p) => 
+          list.patientIds.includes(p.id)
+        ).length
+      }
     }
   })
 

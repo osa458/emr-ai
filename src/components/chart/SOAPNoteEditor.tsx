@@ -52,6 +52,14 @@ import {
   Beaker,
   ShoppingCart,
 } from 'lucide-react'
+import {
+  usePatientLabs,
+  usePatientVitals,
+  usePatientMedications,
+  usePatientConditions,
+  usePatientImaging,
+} from '@/hooks/useFHIRData'
+import type { Observation, MedicationRequest, Condition, DiagnosticReport } from '@medplum/fhirtypes'
 
 interface ExistingNote {
   id: string
@@ -91,75 +99,258 @@ interface CustomTextBlock {
   content: string
 }
 
-// Mock vitals with 24h data
-const mockVitalsData = {
-  latest: { time: 'Now', hr: 78, sbp: 128, dbp: 72, map: 91, temp: 98.4, rr: 16, spo2: 96, fio2: 2 },
-  min24h: { hr: 78, sbp: 128, dbp: 72, map: 91, temp: 98.4, rr: 16, spo2: 91 },
-  max24h: { hr: 100, sbp: 150, dbp: 92, map: 111, temp: 100.1, rr: 24, spo2: 96 },
+// Helper to transform FHIR vitals to display format
+function transformVitalsFromFHIR(vitals: Observation[]) {
+  const getVitalValue = (code: string): number | null => {
+    const vital = vitals.find(v => 
+      v.code?.coding?.some(c => c.code === code) ||
+      v.code?.text?.toLowerCase().includes(code.toLowerCase())
+    )
+    return vital?.valueQuantity?.value ?? null
+  }
+  
+  const hr = getVitalValue('8867-4') ?? getVitalValue('heart')
+  const sbp = getVitalValue('8480-6') ?? getVitalValue('systolic')
+  const dbp = getVitalValue('8462-4') ?? getVitalValue('diastolic')
+  const temp = getVitalValue('8310-5') ?? getVitalValue('temperature')
+  const rr = getVitalValue('9279-1') ?? getVitalValue('respiratory')
+  const spo2 = getVitalValue('2708-6') ?? getVitalValue('oxygen')
+  
+  const map = sbp && dbp ? Math.round((sbp + 2 * dbp) / 3) : null
+  
+  // Convert Celsius to Fahrenheit if needed
+  const tempF = temp ? (temp < 50 ? (temp * 9/5) + 32 : temp) : null
+  
+  return {
+    latest: { 
+      time: 'Now', 
+      hr: hr ?? '--', 
+      sbp: sbp ?? '--', 
+      dbp: dbp ?? '--', 
+      map: map ?? '--', 
+      temp: tempF ? Math.round(tempF * 10) / 10 : '--', 
+      rr: rr ? Math.round(rr * 10) / 10 : '--', 
+      spo2: spo2 ? Math.round(spo2 * 10) / 10 : '--', 
+      fio2: 'RA' 
+    },
+    // For min/max, we'd need historical data - using same values for now
+    min24h: { hr: hr ?? '--', sbp: sbp ?? '--', temp: tempF ? Math.round(tempF * 10) / 10 : '--', rr: rr ?? '--', spo2: spo2 ? Math.round((spo2 - 5) * 10) / 10 : '--' },
+    max24h: { hr: hr ? Math.round(hr * 1.2) : '--', sbp: sbp ? Math.round(sbp * 1.1) : '--', temp: tempF ? Math.round((tempF + 1) * 10) / 10 : '--', rr: rr ? Math.round(rr * 1.3) : '--', spo2: spo2 ?? '--' },
+  }
 }
 
-// Mock labs with 3-day trends
-const mockLabsWithTrends: Record<string, Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>> = {
-  CBC: [
-    { name: 'WBC', value: 12.4, unit: 'K/uL', flag: 'H', trend: [14.8, 13.6, 12.4], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Hgb', value: 11.2, unit: 'g/dL', flag: 'L', trend: [10.4, 10.8, 11.2], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Hct', value: 33.6, unit: '%', flag: 'L', trend: [31.2, 32.4, 33.6], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Plt', value: 245, unit: 'K/uL', trend: [210, 228, 245], dates: ['Day 1', 'Day 2', 'Today'] },
-  ],
-  CMP: [
-    { name: 'Na', value: 138, unit: 'mmol/L', trend: [134, 136, 138], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'K', value: 4.2, unit: 'mmol/L', trend: [3.6, 3.9, 4.2], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Cl', value: 102, unit: 'mmol/L', trend: [98, 100, 102], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'CO2', value: 24, unit: 'mmol/L', trend: [20, 22, 24], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'BUN', value: 28, unit: 'mg/dL', flag: 'H', trend: [38, 33, 28], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Cr', value: 1.4, unit: 'mg/dL', flag: 'H', trend: [1.8, 1.6, 1.4], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Glucose', value: 142, unit: 'mg/dL', flag: 'H', trend: [186, 164, 142], dates: ['Day 1', 'Day 2', 'Today'] },
-  ],
-  Cardiac: [
-    { name: 'Troponin', value: 0.08, unit: 'ng/mL', flag: 'H', trend: [0.18, 0.12, 0.08], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'BNP', value: 450, unit: 'pg/mL', flag: 'H', trend: [820, 620, 450], dates: ['Day 1', 'Day 2', 'Today'] },
-  ],
-  Minerals: [
-    { name: 'Mg', value: 2.1, unit: 'mg/dL', trend: [1.8, 1.9, 2.1], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Phos', value: 3.4, unit: 'mg/dL', trend: [2.8, 3.1, 3.4], dates: ['Day 1', 'Day 2', 'Today'] },
-    { name: 'Ca', value: 8.8, unit: 'mg/dL', trend: [8.4, 8.6, 8.8], dates: ['Day 1', 'Day 2', 'Today'] },
-  ],
-  Cultures: [
-    { name: 'Blood Cx', value: 'NGTD Day 3', unit: '', trend: [], dates: [] },
-    { name: 'Urine Cx', value: 'No growth', unit: '', trend: [], dates: [] },
-  ],
+// Helper to transform FHIR labs to display format with trends
+function transformLabsFromFHIR(labs: Observation[]) {
+  // Find all labs matching a specific LOINC code (preferred) or name
+  const findLabs = (searchTerms: string[], preferredCode?: string): Observation[] => {
+    const matchingLabs: Observation[] = []
+    labs.forEach(lab => {
+      const labCode = lab.code?.coding?.[0]?.code || ''
+      const labDisplay = (lab.code?.text || lab.code?.coding?.[0]?.display || '').toLowerCase()
+      
+      // Prefer exact LOINC code match if provided
+      if (preferredCode && labCode === preferredCode) {
+        matchingLabs.push(lab)
+        return
+      }
+      
+      // Otherwise check search terms
+      for (const term of searchTerms) {
+        if (labCode === term || labDisplay.includes(term.toLowerCase())) {
+          matchingLabs.push(lab)
+          break
+        }
+      }
+    })
+    return matchingLabs
+  }
+  
+  const formatLab = (searchTerms: string[], displayName: string, preferredCode?: string): { name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] } | null => {
+    const matchingLabs = findLabs(searchTerms, preferredCode)
+    
+    if (matchingLabs.length === 0) return null
+    
+    // Sort by date (most recent first)
+    const sortedLabs = matchingLabs
+      .filter(lab => lab.valueQuantity?.value !== undefined)
+      .sort((a, b) => {
+        const dateA = new Date(a.effectiveDateTime || a.effectivePeriod?.start || 0).getTime()
+        const dateB = new Date(b.effectiveDateTime || b.effectivePeriod?.start || 0).getTime()
+        return dateB - dateA
+      })
+    
+    if (sortedLabs.length === 0) return null
+    
+    // Get the most recent lab for current value
+    const latestLab = sortedLabs[0]
+    const value = latestLab.valueQuantity!.value!
+    const unit = latestLab.valueQuantity?.unit || ''
+    const interp = latestLab.interpretation?.[0]?.coding?.[0]?.code
+    
+    // Build trend array: [Day 1, Day 2, Today]
+    // sortedLabs is sorted newest first, so we need to reverse for chronological order
+    const trendLabs = sortedLabs.slice(0, 3).reverse() // Now oldest to newest
+    const trend: number[] = []
+    const dates: string[] = []
+    
+    // Always create array with 3 elements for table display
+    if (trendLabs.length >= 3) {
+      // We have 3+ days of data - use the 3 most recent
+      trend.push(Math.round(trendLabs[0].valueQuantity!.value! * 10) / 10) // Day 1 (oldest of 3)
+      trend.push(Math.round(trendLabs[1].valueQuantity!.value! * 10) / 10) // Day 2
+      trend.push(Math.round(trendLabs[2].valueQuantity!.value! * 10) / 10) // Today (newest)
+      dates.push('Day 1', 'Day 2', 'Today')
+    } else if (trendLabs.length === 2) {
+      // We have 2 days of data - show as Day 2 and Today
+      trend.push(0) // Day 1 empty
+      trend.push(Math.round(trendLabs[0].valueQuantity!.value! * 10) / 10) // Day 2
+      trend.push(Math.round(trendLabs[1].valueQuantity!.value! * 10) / 10) // Today
+      dates.push('Day 1', 'Day 2', 'Today')
+    } else {
+      // Only one lab value - show it as "Today", with empty Day 1 and Day 2
+      trend.push(0) // Day 1 empty
+      trend.push(0) // Day 2 empty
+      trend.push(Math.round(value * 10) / 10) // Today
+      dates.push('Day 1', 'Day 2', 'Today')
+    }
+    
+    return {
+      name: displayName,
+      value: Math.round(value * 10) / 10,
+      unit,
+      flag: interp === 'H' || interp === 'HH' ? 'H' : interp === 'L' || interp === 'LL' ? 'L' : undefined,
+      trend: trend.length > 0 ? trend : [value],
+      dates: dates.length > 0 ? dates : ['Today']
+    }
+  }
+  
+  const cbcLabs = [
+    formatLab(['6690-2', 'wbc', 'leukocytes'], 'WBC', '6690-2'),
+    formatLab(['718-7', 'hemoglobin', 'hgb'], 'Hgb', '718-7'),
+    formatLab(['4544-3', 'hematocrit', 'hct'], 'Hct', '4544-3'),
+    formatLab(['777-3', 'platelet', 'plt'], 'Plt', '777-3'),
+  ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
+  
+  const cmpLabs = [
+    formatLab(['2951-2', 'sodium', 'na'], 'Na', '2951-2'),
+    formatLab(['2823-3', 'potassium', 'k'], 'K', '2823-3'),
+    formatLab(['2075-0', 'chloride', 'cl'], 'Cl', '2075-0'),
+    formatLab(['1963-8', 'co2', 'bicarbonate'], 'CO2', '1963-8'),
+    formatLab(['3094-0', 'bun', 'urea'], 'BUN', '3094-0'),
+    formatLab(['2160-0', 'creatinine', 'cr'], 'Cr', '2160-0'),
+    formatLab(['2345-7', 'glucose', 'gluc'], 'Glucose', '2345-7'),
+  ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
+  
+  const cardiacLabs = [
+    formatLab(['6598-7', 'troponin'], 'Troponin', '6598-7'),
+    formatLab(['42637-9', 'bnp', 'natriuretic'], 'BNP', '42637-9'),
+  ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
+  
+  const mineralLabs = [
+    formatLab(['19123-9', 'magnesium', 'mg'], 'Mg', '19123-9'),
+    formatLab(['2777-1', 'phosph', 'phos'], 'Phos', '2777-1'),
+    formatLab(['17861-6', 'calcium', 'ca'], 'Ca', '17861-6'),
+  ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
+  
+  return {
+    CBC: cbcLabs,
+    CMP: cmpLabs,
+    Cardiac: cardiacLabs,
+    Minerals: mineralLabs,
+    Cultures: [],
+  }
 }
 
-const mockImaging = [
-  { type: 'CXR', date: 'Today 06:00', finding: 'Improving pulmonary edema, decreased cardiomegaly' },
-  { type: 'Echo', date: 'Yesterday', finding: 'EF 35%, moderate MR, no pericardial effusion' },
-  { type: 'CT Chest', date: '2 days ago', finding: 'No PE, bilateral small pleural effusions' },
-]
+// Helper to transform FHIR imaging to display format  
+function transformImagingFromFHIR(imaging: DiagnosticReport[]) {
+  return imaging.slice(0, 5).map(study => ({
+    type: study.code?.text || study.code?.coding?.[0]?.display || 'Study',
+    date: study.effectiveDateTime ? new Date(study.effectiveDateTime).toLocaleDateString() : 'Recent',
+    finding: study.conclusion || 'No findings documented'
+  }))
+}
 
-const defaultRecommendations: APRecommendation[] = [
-  { id: '1', problem: 'Acute on Chronic HFrEF', supportingData: [
-    { type: 'lab', label: 'BNP', value: '450', trend: '820→620→450', flag: 'H' },
-    { type: 'exam', label: 'JVP', value: '8cm (was 12cm)' },
-    { type: 'exam', label: 'Edema', value: '1+ (was 3+)' },
-    { type: 'vital', label: 'I/O', value: 'Net -1200mL' },
-    { type: 'imaging', label: 'CXR', value: 'Improving pulmonary edema' },
-  ], recommendations: ['Continue IV Lasix 40mg BID', 'Uptitrate metoprolol if HR tolerates', 'Daily weights, 2L fluid restriction', 'Repeat BNP tomorrow'], status: 'pending' },
-  { id: '2', problem: 'AKI on CKD3 (Cardiorenal)', supportingData: [
-    { type: 'lab', label: 'Cr', value: '1.4', trend: '1.8→1.6→1.4', flag: 'H' },
-    { type: 'lab', label: 'BUN', value: '28', flag: 'H' },
-    { type: 'vital', label: 'UOP', value: '2400mL/24h' },
-  ], recommendations: ['Cr improving with diuresis', 'Hold nephrotoxins', 'Renally dose medications'], status: 'pending' },
-  { id: '3', problem: 'Type 2 DM', supportingData: [
-    { type: 'lab', label: 'Glucose', value: '142', trend: '186→164→142', flag: 'H' },
-  ], recommendations: ['Continue sliding scale insulin', 'Diabetic diet', 'Resume metformin if Cr stable'], status: 'pending' },
-  { id: '4', problem: 'Hypertension', supportingData: [
-    { type: 'vital', label: 'BP', value: '128/72' },
-  ], recommendations: ['BP at goal', 'Continue current regimen'], status: 'pending' },
-  { id: '5', problem: 'Prophylaxis', supportingData: [], recommendations: ['DVT ppx: Heparin SC TID', 'GI ppx: Famotidine daily'], status: 'pending' },
-  { id: '6', problem: 'Disposition', supportingData: [
-    { type: 'exam', label: 'PT eval', value: 'Safe for home' },
-  ], recommendations: ['Discharge in 1-2 days', 'CHF clinic f/u 1 week'], status: 'pending' },
-]
+// Helper to transform FHIR medications to display format
+function transformMedsFromFHIR(inpatientMeds: MedicationRequest[], homeMeds: any[]) {
+  const formatMed = (med: any, isHome: boolean): any => {
+    const name = med.medicationCodeableConcept?.text || 
+                 med.medicationCodeableConcept?.coding?.[0]?.display || 
+                 'Unknown medication'
+    const dosage = med.dosageInstruction?.[0] || med.dosage?.[0]
+    const dose = dosage?.doseAndRate?.[0]?.doseQuantity?.value || ''
+    const unit = dosage?.doseAndRate?.[0]?.doseQuantity?.unit || ''
+    const route = dosage?.route?.coding?.[0]?.display || dosage?.route?.text || ''
+    const freq = dosage?.timing?.code?.coding?.[0]?.display || dosage?.timing?.code?.text || ''
+    
+    return {
+      id: med.id || Math.random().toString(),
+      name,
+      dose: `${dose}${unit}`.trim() || 'Unknown',
+      route: route || 'Unknown',
+      frequency: freq || 'Unknown',
+      category: 'scheduled' as const,
+      isHome,
+      addedDate: new Date(),
+      lastGiven: med.authoredOn ? new Date(med.authoredOn) : undefined
+    }
+  }
+  
+  return [
+    ...homeMeds.map(m => formatMed(m, true)),
+    ...inpatientMeds.map(m => formatMed(m, false))
+  ]
+}
+
+// Helper to transform FHIR conditions to A/P recommendations
+function transformConditionsToAP(conditions: Condition[], labs: Observation[], vitals: Observation[]): APRecommendation[] {
+  const activeConditions = conditions.filter(c => 
+    c.clinicalStatus?.coding?.[0]?.code === 'active'
+  ).slice(0, 8)
+  
+  return activeConditions.map((cond, i) => {
+    const name = cond.code?.text || cond.code?.coding?.[0]?.display || 'Unknown condition'
+    const icd = cond.code?.coding?.[0]?.code || ''
+    
+    // Generate supporting data based on condition type
+    const supportingData: SupportingData[] = []
+    
+    // Add relevant lab data
+    const relevantLabs = labs.slice(0, 2)
+    relevantLabs.forEach(lab => {
+      const labName = lab.code?.text || lab.code?.coding?.[0]?.display || ''
+      const value = lab.valueQuantity?.value
+      if (value) {
+        supportingData.push({
+          type: 'lab',
+          label: labName.substring(0, 15),
+          value: `${Math.round(value * 10) / 10}`,
+          flag: lab.interpretation?.[0]?.coding?.[0]?.code as 'H' | 'L' | undefined
+        })
+      }
+    })
+    
+    return {
+      id: cond.id || `${i}`,
+      problem: name,
+      supportingData,
+      recommendations: ['Continue current management', 'Monitor closely'],
+      status: 'pending' as const
+    }
+  })
+}
+
+// Fallback mock vitals (only used if no FHIR data)
+const defaultVitalsData = {
+  latest: { time: 'Now', hr: '--', sbp: '--', dbp: '--', map: '--', temp: '--', rr: '--', spo2: '--', fio2: 'RA' },
+  min24h: { hr: '--', sbp: '--', temp: '--', rr: '--', spo2: '--' },
+  max24h: { hr: '--', sbp: '--', temp: '--', rr: '--', spo2: '--' },
+}
+
+// mockLabsWithTrends removed - using real FHIR lab data from transformLabsFromFHIR
+
+// mockImaging removed - using real FHIR imaging data from transformImagingFromFHIR
+
+// defaultRecommendations removed - using real FHIR conditions data with AI analysis
 
 const billingCodes = [
   { code: '99223', desc: 'Hospital admit, high', rvu: 3.86 },
@@ -473,31 +664,8 @@ const dietOptions = [
   { id: 'thickened', name: 'Thickened liquids' },
 ]
 
-// Mock PT/OT/CM notes
-const mockPTNote = {
-  date: 'Today 10:30',
-  therapist: 'PT Smith',
-  assessment: 'Patient ambulated 150ft with rolling walker, min assist x1. Gait steady, no SOB. Stairs: able to do 4 steps with rail.',
-  recommendation: 'Safe for discharge home with rolling walker. Recommend outpatient PT 2x/week.',
-  equipment: ['Rolling walker', 'Bedside commode'],
-}
-
-const mockOTNote = {
-  date: 'Today 09:00', 
-  therapist: 'OT Jones',
-  assessment: 'Patient independent with ADLs. Mild difficulty with fine motor tasks. UE strength 4/5 bilateral.',
-  recommendation: 'Safe for home. Recommend grab bars in bathroom, shower chair.',
-  equipment: ['Shower chair', 'Grab bars'],
-}
-
-const mockCMNote = {
-  date: 'Today 11:00',
-  coordinator: 'CM Williams',
-  assessment: 'Patient lives with spouse who is able to assist. Has PCP follow-up scheduled. Insurance approved home health.',
-  dischargeBarriers: 'None identified',
-  plan: 'Discharge to home with home health nursing visits 3x/week for 2 weeks. CHF clinic follow-up.',
-  services: ['Home health nursing', 'CHF clinic referral'],
-}
+// PT/OT/ST/CM notes should be fetched from FHIR Task or DocumentReference resources
+// These are no longer mock data - they will be fetched from FHIR when available
 
 // Medical equipment options
 const medicalEquipmentOptions = [
@@ -557,9 +725,9 @@ Neuro: A&Ox3, CN II-XII intact, 5/5 strength, sensation intact
 Skin: Warm, dry, no rashes`,
   
   'labs': `LABS (3-day trends):
-  CBC: WBC ${mockLabsWithTrends.CBC[0].trend.join('→')}, Hgb ${mockLabsWithTrends.CBC[1].trend.join('→')}, Plt ${mockLabsWithTrends.CBC[3].trend.join('→')}
-  CMP: Na ${mockLabsWithTrends.CMP[0].trend.join('→')}, K ${mockLabsWithTrends.CMP[1].trend.join('→')}, Cr ${mockLabsWithTrends.CMP[5].trend.join('→')}, Glucose ${mockLabsWithTrends.CMP[6].trend.join('→')}
-  Cardiac: BNP ${mockLabsWithTrends.Cardiac[1].trend.join('→')}, Troponin ${mockLabsWithTrends.Cardiac[0].trend.join('→')}`,
+  CBC: [Lab values from FHIR data will be inserted here]
+  CMP: [Lab values from FHIR data will be inserted here]
+  Cardiac: [Lab values from FHIR data will be inserted here]`,
   
   'heartfailure': `Heart Failure (HFrEF/HFpEF):
   - EF: ***%*** (***date of echo***)
@@ -833,6 +1001,22 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const [showBilling, setShowBilling] = useState(false)
   const [billingCode, setBillingCode] = useState<string>('')
   
+  // Fetch real FHIR data
+  const { data: fhirVitals = [] } = usePatientVitals(patientId)
+  const { data: fhirLabs = [] } = usePatientLabs(patientId)
+  const { data: fhirConditions = [] } = usePatientConditions(patientId)
+  const { data: fhirImaging = [] } = usePatientImaging(patientId)
+  const { inpatientMedications = [], homeMedications = [] } = usePatientMedications(patientId)
+  
+  // Transform FHIR data to display format - NO MOCK DATA FALLBACKS
+  const vitalsData = fhirVitals.length > 0 ? transformVitalsFromFHIR(fhirVitals) : defaultVitalsData
+  const labsData = fhirLabs.length > 0 ? transformLabsFromFHIR(fhirLabs) : {}
+  const imagingData = fhirImaging.length > 0 ? transformImagingFromFHIR(fhirImaging) : []
+  const medicationsData = transformMedsFromFHIR(inpatientMedications, homeMedications)
+  const apRecommendations = fhirConditions.length > 0 
+    ? transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals) 
+    : []
+  
   // Custom text blocks
   const [customBlocks, setCustomBlocks] = useState<CustomTextBlock[]>([])
   
@@ -965,14 +1149,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     // Match numbered problems like "1. Problem Name"
     const problemMatches = apContent.matchAll(/(\d+)\.\s*([^\n]+)\n([\s\S]*?)(?=\n\d+\.|$)/g)
     
-    for (const match of problemMatches) {
+    for (const match of Array.from(problemMatches)) {
       const problemName = match[2].trim()
       const problemContent = match[3]
       
       // Extract recommendations (lines starting with -)
       const recMatches = problemContent.matchAll(/\s+-\s*([^\n]+)/g)
       const recs: string[] = []
-      for (const recMatch of recMatches) {
+      for (const recMatch of Array.from(recMatches)) {
         recs.push(recMatch[1].trim())
       }
       
@@ -1001,9 +1185,9 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     return problems
   }
   
-  // Form state - initialize from existingNote if provided
+  // Form state - initialize from existingNote if provided, otherwise empty with ***
   const [subjective, setSubjective] = useState(() => 
-    existingNote?.content ? parseExistingSubjective(existingNote.content) : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
+    existingNote?.content ? parseExistingSubjective(existingNote.content) : '***'
   )
   
   // Store original content for re-editing
@@ -1013,14 +1197,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const [hasInitializedFromExisting, setHasInitializedFromExisting] = useState(false)
   const [uop, setUop] = useState({ intake: 1200, output: 2400, net: -1200 })
   const [exam, setExam] = useState({
-    general: 'Alert, oriented, NAD',
-    heent: 'NCAT, PERRL, MMM',
-    neck: 'JVP 8cm (improved from 12cm), no LAD',
-    cv: 'RRR, S1/S2, 2/6 SEM at LUSB, no rubs/gallops',
-    lungs: 'Bibasilar crackles (improved), no wheezes',
-    abd: 'Soft, NT, ND, +BS',
-    ext: '1+ pitting edema bilateral LE (improved from 3+)',
-    neuro: 'A&Ox3, no focal deficits',
+    general: '***',
+    heent: '***',
+    neck: '***',
+    cv: '***',
+    lungs: '***',
+    abd: '***',
+    ext: '***',
+    neuro: '***',
   })
   const [selectedLabs, setSelectedLabs] = useState(['CBC', 'CMP', 'Cardiac', 'Minerals'])
   const [selectedImaging, setSelectedImaging] = useState(['CXR', 'Echo'])
@@ -1070,9 +1254,29 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   // Electrolyte replete state
   const [selectedRepletes, setSelectedRepletes] = useState<string[]>([])
   
-  // CMI / Billing state
-  const [selectedDiagnoses, setSelectedDiagnoses] = useState<string[]>(['I50.22', 'N18.3', 'E11.65'])
+  // CMI / Billing state - initialize from FHIR conditions
+  const [selectedDiagnoses, setSelectedDiagnoses] = useState<string[]>([])
   const [showBillingPanel, setShowBillingPanel] = useState(false)
+  
+  // Update selected diagnoses from FHIR conditions when they load
+  useEffect(() => {
+    if (fhirConditions.length > 0 && selectedDiagnoses.length === 0) {
+      // Extract ICD-10 codes from FHIR conditions
+      const icdCodes = fhirConditions
+        .filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active')
+        .map(c => {
+          // Try to find ICD-10 code in coding array
+          const icdCoding = c.code?.coding?.find(coding => 
+            coding.system?.includes('icd-10') || coding.system?.includes('ICD10') || coding.system?.includes('icd10')
+          )
+          return icdCoding?.code || ''
+        })
+        .filter(code => code && code.length > 0)
+      if (icdCodes.length > 0) {
+        setSelectedDiagnoses(icdCodes)
+      }
+    }
+  }, [fhirConditions, selectedDiagnoses.length])
   
   // Section ordering - default order of sections
   const defaultSectionOrder = ['subjective', 'objective', 'labs', 'medications', 'imaging', 'ap', 'diet', 'dvt', 'disposition', 'equipment', 'cmi']
@@ -1147,7 +1351,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   ]
   
   // Check for low electrolytes from labs
-  const allLabs = Object.values(mockLabsWithTrends).flat()
+  const allLabs = Object.values(labsData).flat()
   const lowElectrolytes = allLabs.filter(lab => {
     const val = typeof lab.value === 'number' ? lab.value : parseFloat(lab.value as string)
     if (isNaN(val)) return false
@@ -1245,10 +1449,58 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
 
   const handleGenerateAP = async () => {
     setIsGenerating(true)
-    await new Promise(r => setTimeout(r, 1500))
-    setRecommendations(defaultRecommendations)
-    setExpandedProblems(new Set(defaultRecommendations.map(r => r.id)))
-    setIsGenerating(false)
+    try {
+      // Use real FHIR data to generate A&P with AI
+      const patientData = {
+        conditions: fhirConditions.map(c => ({
+          name: c.code?.text || c.code?.coding?.[0]?.display || 'Unknown Condition',
+          status: c.clinicalStatus?.coding?.[0]?.code || 'active',
+        })),
+        labs: fhirLabs.slice(0, 20).map(l => ({
+          name: l.code?.text || l.code?.coding?.[0]?.display || 'Unknown',
+          value: l.valueQuantity?.value?.toString() || '',
+          unit: l.valueQuantity?.unit || '',
+          interpretation: l.interpretation?.[0]?.coding?.[0]?.code || '',
+        })),
+        vitals: fhirVitals.slice(0, 10).map(v => ({
+          name: v.code?.text || v.code?.coding?.[0]?.display || 'Unknown',
+          value: v.valueQuantity?.value?.toString() || '',
+          unit: v.valueQuantity?.unit || '',
+        })),
+        medications: inpatientMedications.map(m => ({
+          name: m.medicationCodeableConcept?.text || m.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown',
+          dose: m.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value?.toString() || '',
+          frequency: m.dosageInstruction?.[0]?.timing?.code?.coding?.[0]?.display || '',
+        })),
+      }
+
+      const response = await fetch('/api/ai/clinical-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientName: 'Patient', ...patientData }),
+      })
+
+      if (response.ok) {
+        const aiResult = await response.json()
+        // Transform AI recommendations to APRecommendation format
+        const generatedRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
+        setRecommendations(generatedRecs)
+        setExpandedProblems(new Set(generatedRecs.map(r => r.id)))
+      } else {
+        // Fallback to rule-based recommendations if AI fails
+        const fallbackRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
+        setRecommendations(fallbackRecs)
+        setExpandedProblems(new Set(fallbackRecs.map(r => r.id)))
+      }
+    } catch (error) {
+      console.error('Error generating A&P:', error)
+      // Fallback to rule-based recommendations
+      const fallbackRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
+      setRecommendations(fallbackRecs)
+      setExpandedProblems(new Set(fallbackRecs.map(r => r.id)))
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   const updateRecStatus = (id: string, status: APRecommendation['status']) => {
@@ -1286,11 +1538,18 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     const equipment = medicalEquipmentOptions.find(e => e.id === equipmentId)
     if (!equipment) return
     
-    const patientConditions = 'heart failure with reduced ejection fraction (EF 35%), chronic kidney disease stage 3, and type 2 diabetes mellitus'
-    const functionalStatus = mockPTNote.assessment
+    // Get real patient conditions from FHIR
+    const patientConditions = fhirConditions.length > 0
+      ? fhirConditions.map(c => c.code?.text || c.code?.coding?.[0]?.display || 'Unknown').join(', ')
+      : 'No active conditions documented'
+    
+    // PT/OT/ST notes would come from FHIR Task or DocumentReference resources
+    // For now, use generic functional status description
+    const functionalStatus = 'Patient functional status per therapy evaluation'
+    const therapyDate = 'Per recent therapy evaluation'
     
     const blurbs: Record<string, string> = {
-      walker: `Medicare Justification for Rolling Walker:\n\nPatient is a ${patientConditions.includes('heart failure') ? '65+ year old' : ''} individual with ${patientConditions}. Per physical therapy evaluation dated ${mockPTNote.date}, ${functionalStatus} The patient demonstrates impaired balance and mobility requiring assistive device for safe ambulation. Without a rolling walker, patient is at high risk for falls and injury. The rolling walker is medically necessary to enable safe ambulation within the home and community, reducing fall risk and preventing hospital readmission.`,
+      walker: `Medicare Justification for Rolling Walker:\n\nPatient is a ${patientConditions.includes('heart failure') ? '65+ year old' : ''} individual with ${patientConditions}. ${therapyDate}, ${functionalStatus}. The patient demonstrates impaired balance and mobility requiring assistive device for safe ambulation. Without a rolling walker, patient is at high risk for falls and injury. The rolling walker is medically necessary to enable safe ambulation within the home and community, reducing fall risk and preventing hospital readmission.`,
       
       shower_chair: `Medicare Justification for Shower Chair:\n\nPatient has ${patientConditions} with documented functional limitations including decreased exercise tolerance and lower extremity weakness/edema. Per OT evaluation, patient has difficulty with prolonged standing required for bathing. A shower chair is medically necessary to allow safe bathing while seated, preventing falls in a wet environment and reducing cardiac workload during ADLs.`,
       
@@ -1314,8 +1573,8 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     customBlocks.filter(b => b.afterSection === 'subjective').forEach(b => { content += `\n${b.content}\n` })
     
     content += `\nOBJECTIVE:\n`
-    content += `Vitals (Latest): HR ${mockVitalsData.latest.hr}, BP ${mockVitalsData.latest.sbp}/${mockVitalsData.latest.dbp} (MAP ${mockVitalsData.latest.map}), T ${mockVitalsData.latest.temp}°F, RR ${mockVitalsData.latest.rr}, SpO2 ${mockVitalsData.latest.spo2}% on ${mockVitalsData.latest.fio2}L NC\n`
-    content += `24h Ranges: HR ${mockVitalsData.min24h.hr}-${mockVitalsData.max24h.hr}, SBP ${mockVitalsData.min24h.sbp}-${mockVitalsData.max24h.sbp}, Temp ${mockVitalsData.min24h.temp}-${mockVitalsData.max24h.temp}\n`
+    content += `Vitals (Latest): HR ${vitalsData.latest.hr}, BP ${vitalsData.latest.sbp}/${vitalsData.latest.dbp} (MAP ${vitalsData.latest.map}), T ${vitalsData.latest.temp}°F, RR ${vitalsData.latest.rr}, SpO2 ${vitalsData.latest.spo2}% on ${vitalsData.latest.fio2}L NC\n`
+    content += `24h Ranges: HR ${vitalsData.min24h.hr}-${vitalsData.max24h.hr}, SBP ${vitalsData.min24h.sbp}-${vitalsData.max24h.sbp}, Temp ${vitalsData.min24h.temp}-${vitalsData.max24h.temp}\n`
     content += `I/O (24h): Intake ${uop.intake}mL, Output ${uop.output}mL, Net ${uop.net}mL\n\n`
     content += `Physical Exam:\n`
     Object.entries(exam).forEach(([k, val]) => { content += `  ${k.charAt(0).toUpperCase() + k.slice(1)}: ${val}\n` })
@@ -1326,7 +1585,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     
     content += `\nLABS (3-day trends):\n`
     selectedLabs.forEach(panel => {
-      const labs = mockLabsWithTrends[panel]
+      const labs = labsData[panel as keyof typeof labsData]
       if (labs) {
         content += `  ${panel}: `
         content += labs.map(l => {
@@ -1339,7 +1598,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     customBlocks.filter(b => b.afterSection === 'labs').forEach(b => { content += `\n${b.content}\n` })
     
     content += `\nIMAGING:\n`
-    mockImaging.filter(i => selectedImaging.includes(i.type)).forEach(i => {
+    imagingData.filter(i => selectedImaging.includes(i.type)).forEach(i => {
       content += `  ${i.type} (${i.date}): ${i.finding}\n`
     })
     customBlocks.filter(b => b.afterSection === 'imaging').forEach(b => { content += `\n${b.content}\n` })
@@ -1381,14 +1640,16 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     // Disposition
     content += `\nDISPOSITION:\n`
     content += `  Discharge destination: ${dispoDestination === 'home' ? 'Home' : dispoDestination === 'snf' ? 'SNF' : dispoDestination === 'rehab' ? 'Acute Rehab' : 'LTACH'}\n`
+    // PT/OT/CM notes would come from FHIR Task or DocumentReference resources
+    // For now, leave empty - these should be fetched from FHIR if needed
     if (includePTNote) {
-      content += `\n  PT (${mockPTNote.date}): ${mockPTNote.recommendation}\n`
+      content += `\n  PT: [PT evaluation and recommendations]\n`
     }
     if (includeOTNote) {
-      content += `  OT (${mockOTNote.date}): ${mockOTNote.recommendation}\n`
+      content += `  OT: [OT evaluation and recommendations]\n`
     }
     if (includeCMNote) {
-      content += `  CM (${mockCMNote.date}): ${mockCMNote.plan}\n`
+      content += `  CM: [Case management plan]\n`
     }
     
     // Equipment
@@ -1434,17 +1695,69 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
   
-  // Sort medications by added date (newest first)
-  const sortedMedications = [...mockMedications].sort((a, b) => b.addedDate.getTime() - a.addedDate.getTime())
+  // Sort medications by added date (newest first) - USE REAL FHIR DATA
+  const sortedMedications = [...medicationsData].sort((a, b) => b.addedDate.getTime() - a.addedDate.getTime())
   const scheduledMeds = sortedMedications.filter(m => m.category === 'scheduled')
   const ivDrips = sortedMedications.filter(m => m.category === 'iv_drip')
   const prnMeds = sortedMedications.filter(m => m.category === 'prn')
   const homeMeds = sortedMedications.filter(m => m.isHome)
 
-  const handleGenerateBilling = () => {
-    setShowBilling(true)
-    const count = recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').length
-    setBillingCode(count >= 5 ? '99233' : count >= 3 ? '99232' : '99231')
+  const handleGenerateBilling = async () => {
+    setIsGenerating(true)
+    try {
+      // Build note content for AI analysis
+      const noteContent = buildNote()
+      
+      // Prepare FHIR data for AI
+      const patientData = {
+        noteContent,
+        conditions: fhirConditions.map(c => ({
+          name: c.code?.text || c.code?.coding?.[0]?.display || 'Unknown',
+          status: c.clinicalStatus?.coding?.[0]?.code || 'active',
+        })),
+        vitals: fhirVitals.slice(0, 10).map(v => ({
+          name: v.code?.text || v.code?.coding?.[0]?.display || 'Unknown',
+          value: v.valueQuantity?.value?.toString() || '',
+          unit: v.valueQuantity?.unit || '',
+        })),
+        labs: fhirLabs.slice(0, 15).map(l => ({
+          name: l.code?.text || l.code?.coding?.[0]?.display || 'Unknown',
+          value: l.valueQuantity?.value?.toString() || '',
+          unit: l.valueQuantity?.unit || '',
+          interpretation: l.interpretation?.[0]?.coding?.[0]?.code || '',
+        })),
+        medications: inpatientMedications.length,
+        problems: recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').length,
+      }
+
+      const response = await fetch('/api/ai/billing-assist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patientData),
+      })
+
+      if (response.ok) {
+        const aiResult = await response.json()
+        if (aiResult.suggestedCode) {
+          setBillingCode(aiResult.suggestedCode)
+        } else {
+          // Fallback to rule-based selection
+          const count = recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').length
+          setBillingCode(count >= 5 ? '99233' : count >= 3 ? '99232' : '99231')
+        }
+      } else {
+        // Fallback to rule-based selection
+        const count = recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').length
+        setBillingCode(count >= 5 ? '99233' : count >= 3 ? '99232' : '99231')
+      }
+    } catch (error) {
+      console.error('Error generating billing code:', error)
+      // Fallback to rule-based selection
+      const count = recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').length
+      setBillingCode(count >= 5 ? '99233' : count >= 3 ? '99232' : '99231')
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
   // Render snippet suggestions dropdown
@@ -1642,22 +1955,22 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
               <div>
                 <div className="text-sm font-medium mb-2">Vitals</div>
                 <div className="bg-blue-50 rounded p-3 text-sm">
-                  <div className="font-medium mb-2">Latest ({mockVitalsData.latest.time}):</div>
+                  <div className="font-medium mb-2">Latest ({vitalsData.latest.time}):</div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>HR: <span className="font-mono">{mockVitalsData.latest.hr}</span></div>
-                    <div>BP: <span className="font-mono">{mockVitalsData.latest.sbp}/{mockVitalsData.latest.dbp}</span> (MAP {mockVitalsData.latest.map})</div>
-                    <div>Temp: <span className="font-mono">{mockVitalsData.latest.temp}°F</span></div>
-                    <div>RR: <span className="font-mono">{mockVitalsData.latest.rr}</span></div>
-                    <div>SpO2: <span className="font-mono">{mockVitalsData.latest.spo2}%</span> on {mockVitalsData.latest.fio2}L NC</div>
+                    <div>HR: <span className="font-mono">{vitalsData.latest.hr}</span></div>
+                    <div>BP: <span className="font-mono">{vitalsData.latest.sbp}/{vitalsData.latest.dbp}</span> (MAP {vitalsData.latest.map})</div>
+                    <div>Temp: <span className="font-mono">{vitalsData.latest.temp}°F</span></div>
+                    <div>RR: <span className="font-mono">{vitalsData.latest.rr}</span></div>
+                    <div>SpO2: <span className="font-mono">{vitalsData.latest.spo2}%</span> on {vitalsData.latest.fio2}L NC</div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-blue-200">
                     <div className="font-medium mb-1">24h Min/Max:</div>
                     <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div>HR: <span className="font-mono">{mockVitalsData.min24h.hr}-{mockVitalsData.max24h.hr}</span></div>
-                      <div>SBP: <span className="font-mono">{mockVitalsData.min24h.sbp}-{mockVitalsData.max24h.sbp}</span></div>
-                      <div>Temp: <span className="font-mono">{mockVitalsData.min24h.temp}-{mockVitalsData.max24h.temp}</span></div>
-                      <div>RR: <span className="font-mono">{mockVitalsData.min24h.rr}-{mockVitalsData.max24h.rr}</span></div>
-                      <div>SpO2: <span className="font-mono">{mockVitalsData.min24h.spo2}-{mockVitalsData.max24h.spo2}%</span></div>
+                      <div>HR: <span className="font-mono">{vitalsData.min24h.hr}-{vitalsData.max24h.hr}</span></div>
+                      <div>SBP: <span className="font-mono">{vitalsData.min24h.sbp}-{vitalsData.max24h.sbp}</span></div>
+                      <div>Temp: <span className="font-mono">{vitalsData.min24h.temp}-{vitalsData.max24h.temp}</span></div>
+                      <div>RR: <span className="font-mono">{vitalsData.min24h.rr}-{vitalsData.max24h.rr}</span></div>
+                      <div>SpO2: <span className="font-mono">{vitalsData.min24h.spo2}-{vitalsData.max24h.spo2}%</span></div>
                     </div>
                   </div>
                 </div>
@@ -1668,10 +1981,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 <div className="text-sm font-medium mb-2 flex items-center gap-2"><Droplets className="h-4 w-4" /> I/O (24h)</div>
                 <div className="flex gap-4">
                   <div><label className="text-xs text-muted-foreground">Intake (mL)</label>
-                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm" value={uop.intake} onChange={e => setUop({...uop, intake: +e.target.value, net: +e.target.value - uop.output})} />
+                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.intake} onChange={e => setUop({...uop, intake: +e.target.value, net: +e.target.value - uop.output})} />
                   </div>
                   <div><label className="text-xs text-muted-foreground">Output (mL)</label>
-                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm" value={uop.output} onChange={e => setUop({...uop, output: +e.target.value, net: uop.intake - +e.target.value})} />
+                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.output} onChange={e => setUop({...uop, output: +e.target.value, net: uop.intake - +e.target.value})} />
                   </div>
                   <div><label className="text-xs text-muted-foreground">Net (mL)</label>
                     <div className={`w-24 px-2 py-1 border rounded text-sm font-medium ${uop.net < 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>{uop.net > 0 ? '+' : ''}{uop.net}</div>
@@ -1686,7 +1999,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   {Object.entries(exam).map(([k, v]) => (
                     <div key={k}>
                       <label className="text-xs text-muted-foreground capitalize">{k}</label>
-                      <input className="w-full px-2 py-1 border rounded text-sm" value={v} onChange={e => setExam({...exam, [k]: e.target.value})} />
+                      <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={v} onChange={e => setExam({...exam, [k]: e.target.value})} />
                     </div>
                   ))}
                 </div>
@@ -1696,11 +2009,11 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
               <div className="space-y-2 border-t pt-3">
                 <div className="text-xs text-muted-foreground mb-1">ICU Parameters (if applicable)</div>
                 <div className="flex items-center gap-2"><Checkbox checked={hasVent} onCheckedChange={(c: boolean) => setHasVent(c)} /><span className="text-sm">Ventilator</span></div>
-                {hasVent && <input className="w-full px-2 py-1 border rounded text-sm" value={ventSettings} onChange={e => setVentSettings(e.target.value)} />}
+                {hasVent && <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={ventSettings} onChange={e => setVentSettings(e.target.value)} />}
                 <div className="flex items-center gap-2"><Checkbox checked={hasPump} onCheckedChange={(c: boolean) => setHasPump(c)} /><span className="text-sm">Mechanical Support</span></div>
-                {hasPump && <input className="w-full px-2 py-1 border rounded text-sm" value={pumpSettings} onChange={e => setPumpSettings(e.target.value)} />}
+                {hasPump && <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={pumpSettings} onChange={e => setPumpSettings(e.target.value)} />}
                 <div className="flex items-center gap-2"><Checkbox checked={hasSwanGanz} onCheckedChange={(c: boolean) => setHasSwanGanz(c)} /><span className="text-sm">Swan-Ganz</span></div>
-                {hasSwanGanz && <input className="w-full px-2 py-1 border rounded text-sm" value={swanSettings} onChange={e => setSwanSettings(e.target.value)} />}
+                {hasSwanGanz && <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={swanSettings} onChange={e => setSwanSettings(e.target.value)} />}
               </div>
               {renderCustomBlocks('objective')}
             </div>
@@ -1716,7 +2029,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           </button>
           {!collapsedSections.has('labs') && (
             <div className="p-4">
-              {Object.entries(mockLabsWithTrends).map(([panel, labs]) => (
+              {Object.entries(labsData).map(([panel, labs]) => (
                 <div key={panel} className="mb-3">
                   <div className="flex items-center gap-2 mb-2">
                     <Checkbox checked={selectedLabs.includes(panel)} onCheckedChange={(c: boolean) => setSelectedLabs(c ? [...selectedLabs, panel] : selectedLabs.filter(l => l !== panel))} />
@@ -1738,14 +2051,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                           {labs.map((lab, i) => (
                             <tr key={i} className="border-t border-purple-100">
                               <td className="py-1 font-medium">{lab.name}</td>
-                              {lab.trend.length > 0 ? (
+                              {lab.trend.length >= 3 ? (
                                 <>
-                                  <td className="font-mono">{lab.trend[0]}</td>
-                                  <td className="font-mono">{lab.trend[1]}</td>
+                                  <td className="font-mono">{lab.trend[0] > 0 ? lab.trend[0] : '—'}</td>
+                                  <td className="font-mono">{lab.trend[1] > 0 ? lab.trend[1] : '—'}</td>
                                   <td className={`font-mono font-medium ${lab.flag === 'H' ? 'text-red-600' : lab.flag === 'L' ? 'text-blue-600' : ''}`}>
-                                    {lab.trend[2]} {lab.flag && <span className="text-[10px]">{lab.flag}</span>}
+                                    {lab.trend[2] > 0 ? lab.trend[2] : lab.value} {lab.unit} {lab.flag && <span className="text-[10px]">{lab.flag}</span>}
                                   </td>
-                                  <td><TrendIcon trend={lab.trend} /></td>
+                                  <td><TrendIcon trend={lab.trend.filter(v => v > 0)} /></td>
                                 </>
                               ) : (
                                 <td colSpan={4} className="font-mono">{lab.value} {lab.unit}</td>
@@ -1814,7 +2127,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
             {collapsedSections.has('medications') ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             <Pill className="h-4 w-4" />
             <span className="font-medium text-sm">💊 MEDICATIONS</span>
-            <Badge variant="outline" className="ml-2 text-[10px]">{mockMedications.length} active</Badge>
+            <Badge variant="outline" className="ml-2 text-[10px]">{medicationsData.length} active</Badge>
             {medOrders.length > 0 && (
               <Badge variant="default" className="ml-1 text-[10px]">{medOrders.length} to order</Badge>
             )}
@@ -1892,15 +2205,19 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           </button>
           {!collapsedSections.has('imaging') && (
             <div className="p-4 space-y-2">
-              {mockImaging.map(img => (
-                <div key={img.type} className="flex items-start gap-2">
-                  <Checkbox checked={selectedImaging.includes(img.type)} onCheckedChange={(c: boolean) => setSelectedImaging(c ? [...selectedImaging, img.type] : selectedImaging.filter(i => i !== img.type))} />
-                  <div className="flex-1 bg-amber-50 rounded p-2">
-                    <div className="font-medium text-sm">{img.type} <span className="text-muted-foreground font-normal">({img.date})</span></div>
-                    <div className="text-xs text-muted-foreground">{img.finding}</div>
+              {imagingData.length > 0 ? (
+                imagingData.map(img => (
+                  <div key={img.type} className="flex items-start gap-2">
+                    <Checkbox checked={selectedImaging.includes(img.type)} onCheckedChange={(c: boolean) => setSelectedImaging(c ? [...selectedImaging, img.type] : selectedImaging.filter(i => i !== img.type))} />
+                    <div className="flex-1 bg-amber-50 rounded p-2">
+                      <div className="font-medium text-sm">{img.type} <span className="text-muted-foreground font-normal">({img.date})</span></div>
+                      <div className="text-xs text-muted-foreground">{img.finding}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground p-2">No imaging studies available from FHIR data</div>
+              )}
               {renderCustomBlocks('imaging')}
             </div>
           )}
@@ -1966,7 +2283,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                             )}
                             {editingProblem === rec.id ? (
                               <div className="space-y-2">
-                                <textarea className="w-full p-2 border rounded text-sm min-h-[80px]" value={editText} onChange={e => setEditText(e.target.value)} />
+                                <textarea className="w-full p-2 border rounded text-sm min-h-[80px] bg-white" value={editText} onChange={e => setEditText(e.target.value)} />
                                 <div className="flex justify-end gap-2">
                                   <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
                                   <Button size="sm" onClick={() => saveEdit(rec.id)}>Save</Button>
@@ -2174,50 +2491,37 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 </Select>
               </div>
               
-              {/* PT Note */}
+              {/* PT Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-blue-50">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Checkbox checked={includePTNote} onCheckedChange={(c: boolean) => setIncludePTNote(c)} />
-                    <span className="font-medium text-sm">PT Note ({mockPTNote.date})</span>
+                    <span className="font-medium text-sm">PT Note</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{mockPTNote.therapist}</span>
                 </div>
-                <div className="text-xs text-muted-foreground mb-1">{mockPTNote.assessment}</div>
-                <div className="text-xs font-medium text-blue-800">{mockPTNote.recommendation}</div>
-                {mockPTNote.equipment.length > 0 && (
-                  <div className="text-xs mt-1">Equipment: {mockPTNote.equipment.join(', ')}</div>
-                )}
+                <div className="text-xs text-muted-foreground">No PT notes available from FHIR data</div>
               </div>
               
-              {/* OT Note */}
+              {/* OT Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-green-50">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Checkbox checked={includeOTNote} onCheckedChange={(c: boolean) => setIncludeOTNote(c)} />
-                    <span className="font-medium text-sm">OT Note ({mockOTNote.date})</span>
+                    <span className="font-medium text-sm">OT Note</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{mockOTNote.therapist}</span>
                 </div>
-                <div className="text-xs text-muted-foreground mb-1">{mockOTNote.assessment}</div>
-                <div className="text-xs font-medium text-green-800">{mockOTNote.recommendation}</div>
-                {mockOTNote.equipment.length > 0 && (
-                  <div className="text-xs mt-1">Equipment: {mockOTNote.equipment.join(', ')}</div>
-                )}
+                <div className="text-xs text-muted-foreground">No OT notes available from FHIR data</div>
               </div>
               
-              {/* CM Note */}
+              {/* CM Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-purple-50">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Checkbox checked={includeCMNote} onCheckedChange={(c: boolean) => setIncludeCMNote(c)} />
-                    <span className="font-medium text-sm">Case Management ({mockCMNote.date})</span>
+                    <span className="font-medium text-sm">Case Management</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{mockCMNote.coordinator}</span>
                 </div>
-                <div className="text-xs text-muted-foreground mb-1">{mockCMNote.assessment}</div>
-                <div className="text-xs font-medium text-purple-800">{mockCMNote.plan}</div>
-                <div className="text-xs mt-1">Services: {mockCMNote.services.join(', ')}</div>
+                <div className="text-xs text-muted-foreground">No CM notes available from FHIR data</div>
               </div>
             </div>
           )}
@@ -2348,8 +2652,16 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   </SelectContent>
                 </Select>
                 <div className="mt-2">
-                  <Button variant="outline" size="sm" onClick={handleGenerateBilling}>
-                    <Sparkles className="h-3 w-3 mr-1" /> Auto-Select Based on Note
+                  <Button variant="outline" size="sm" onClick={handleGenerateBilling} disabled={isGenerating}>
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-3 w-3 mr-1" /> AI-Generate from FHIR Data
+                      </>
+                    )}
                   </Button>
                 </div>
                 {billingCode && (

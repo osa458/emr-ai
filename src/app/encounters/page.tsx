@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
   SelectContent,
@@ -20,96 +21,119 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Stethoscope, Plus, Search, Clock, FileText, User, Calendar } from 'lucide-react'
+import { Stethoscope, Search, Clock, RefreshCw, AlertCircle, ExternalLink } from 'lucide-react'
+import { useAllEncounters } from '@/hooks/useFHIRData'
+import type { Encounter as FHIREncounter } from '@medplum/fhirtypes'
 
-type EncounterStatus = 'planned' | 'in-progress' | 'completed' | 'cancelled'
-type EncounterType = 'outpatient' | 'inpatient' | 'emergency' | 'telehealth'
-
-interface Encounter {
-  id: string
-  patient: string
-  practitioner: string
-  type: EncounterType
-  status: EncounterStatus
-  date: string
-  duration: string
-  reason: string
-  notes?: string
-  vitals?: { bp: string; hr: string; temp: string }
-  diagnosis?: string
+// Helper to extract display values from FHIR Encounter
+function getPatientName(encounter: FHIREncounter): string {
+  return encounter.subject?.display || encounter.subject?.reference?.split('/')[1] || 'Unknown Patient'
 }
 
-const initialEncounters: Encounter[] = [
-  { id: 'ENC-001', patient: 'John Smith', practitioner: 'Dr. Sarah Johnson', type: 'outpatient', status: 'completed', date: '12 Dec 2024 09:00', duration: '45 min', reason: 'Annual Physical', notes: 'Patient in good health. Routine labs ordered.', vitals: { bp: '120/80', hr: '72', temp: '98.6°F' }, diagnosis: 'Z00.00 - General adult medical examination' },
-  { id: 'ENC-002', patient: 'Maria Garcia', practitioner: 'Dr. Michael Chen', type: 'telehealth', status: 'in-progress', date: '12 Dec 2024 10:30', duration: '30 min', reason: 'Follow-up', notes: 'Discussing medication adjustment.', vitals: { bp: '135/85', hr: '78', temp: '98.4°F' } },
-  { id: 'ENC-003', patient: 'Robert Wilson', practitioner: 'Dr. Emily Brown', type: 'emergency', status: 'completed', date: '11 Dec 2024 15:20', duration: '2 hr', reason: 'Chest Pain', notes: 'Troponin negative. EKG normal. Discharged with follow-up.', vitals: { bp: '145/92', hr: '88', temp: '98.8°F' }, diagnosis: 'R07.9 - Chest pain, unspecified' },
-  { id: 'ENC-004', patient: 'Sarah Davis', practitioner: 'Dr. Sarah Johnson', type: 'outpatient', status: 'planned', date: '13 Dec 2024 11:00', duration: '30 min', reason: 'Lab Review' },
-  { id: 'ENC-005', patient: 'James Miller', practitioner: 'Dr. Michael Chen', type: 'inpatient', status: 'in-progress', date: '10 Dec 2024 08:00', duration: '3 days', reason: 'Post-Op', notes: 'Day 3 post appendectomy. Tolerating diet well.', vitals: { bp: '118/76', hr: '68', temp: '99.1°F' } },
-]
+function getPatientId(encounter: FHIREncounter): string | null {
+  const ref = encounter.subject?.reference
+  if (ref?.startsWith('Patient/')) {
+    return ref.replace('Patient/', '')
+  }
+  return null
+}
 
-const statusConfig: Record<EncounterStatus, { label: string; class: string }> = {
+function getPractitionerName(encounter: FHIREncounter): string {
+  const participant = encounter.participant?.find(p => 
+    p.type?.some(t => t.coding?.some(c => c.code === 'ATND' || c.code === 'primary'))
+  ) || encounter.participant?.[0]
+  return participant?.individual?.display || participant?.individual?.reference?.split('/')[1] || '—'
+}
+
+function getEncounterType(encounter: FHIREncounter): string {
+  return encounter.class?.display || encounter.class?.code || encounter.type?.[0]?.text || encounter.type?.[0]?.coding?.[0]?.display || '—'
+}
+
+function getEncounterReason(encounter: FHIREncounter): string {
+  return encounter.reasonCode?.[0]?.text || 
+    encounter.reasonCode?.[0]?.coding?.[0]?.display || 
+    encounter.type?.[0]?.text ||
+    '—'
+}
+
+function getDiagnosis(encounter: FHIREncounter): string {
+  return encounter.diagnosis?.[0]?.condition?.display ||
+    encounter.diagnosis?.[0]?.condition?.reference?.split('/')[1] ||
+    ''
+}
+
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return '—'
+  try {
+    return new Date(dateStr).toLocaleString('en-US', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  } catch {
+    return dateStr
+  }
+}
+
+function calculateDuration(encounter: FHIREncounter): string {
+  if (!encounter.period?.start) return '—'
+  const start = new Date(encounter.period.start)
+  const end = encounter.period.end ? new Date(encounter.period.end) : new Date()
+  const diffMs = end.getTime() - start.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  if (diffMins < 60) return `${diffMins} min`
+  const hours = Math.floor(diffMins / 60)
+  const mins = diffMins % 60
+  if (hours < 24) return mins > 0 ? `${hours}h ${mins}m` : `${hours} hr`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days > 1 ? 's' : ''}`
+}
+
+const statusConfig: Record<string, { label: string; class: string }> = {
   planned: { label: 'Planned', class: 'badge-status badge-info' },
+  arrived: { label: 'Arrived', class: 'badge-status badge-info' },
+  triaged: { label: 'Triaged', class: 'badge-status badge-info' },
   'in-progress': { label: 'In Progress', class: 'badge-status badge-warning' },
-  completed: { label: 'Completed', class: 'badge-status badge-success' },
+  onleave: { label: 'On Leave', class: 'badge-status badge-warning' },
+  finished: { label: 'Finished', class: 'badge-status badge-success' },
   cancelled: { label: 'Cancelled', class: 'badge-status badge-error' },
+  'entered-in-error': { label: 'Error', class: 'badge-status badge-error' },
+  unknown: { label: 'Unknown', class: 'badge-status' },
 }
-
-const practitioners = ['Dr. Sarah Johnson', 'Dr. Michael Chen', 'Dr. Emily Brown', 'Dr. James Wilson', 'Dr. Lisa Anderson']
-const patients = ['John Smith', 'Maria Garcia', 'Robert Wilson', 'Sarah Davis', 'James Miller', 'Patricia Davis', 'William Anderson']
 
 export default function EncountersPage() {
-  const [encounters, setEncounters] = useState<Encounter[]>(initialEncounters)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(null)
+  const [selectedEncounter, setSelectedEncounter] = useState<FHIREncounter | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
-  const [notesDialogOpen, setNotesDialogOpen] = useState(false)
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [newEncounter, setNewEncounter] = useState<Partial<Encounter>>({ type: 'outpatient', status: 'planned' })
-  const [editNotes, setEditNotes] = useState('')
 
+  const { data, isLoading, isError, error, refetch } = useAllEncounters({ 
+    status: statusFilter !== 'all' ? statusFilter : undefined,
+    _count: 100 
+  })
+  
+  const encounters = data?.encounters || []
+  const total = data?.total || 0
+
+  // Client-side search filter
   const filteredEncounters = encounters.filter(e => {
-    if (statusFilter !== 'all' && e.status !== statusFilter) return false
-    if (searchTerm && !e.patient.toLowerCase().includes(searchTerm.toLowerCase())) return false
-    return true
+    if (!searchTerm) return true
+    const patientName = getPatientName(e).toLowerCase()
+    const practitioner = getPractitionerName(e).toLowerCase()
+    const reason = getEncounterReason(e).toLowerCase()
+    const search = searchTerm.toLowerCase()
+    return patientName.includes(search) || practitioner.includes(search) || reason.includes(search)
   })
 
-  const handleView = (enc: Encounter) => {
+  const handleView = (enc: FHIREncounter) => {
     setSelectedEncounter(enc)
     setViewDialogOpen(true)
   }
 
-  const handleNotes = (enc: Encounter) => {
-    setSelectedEncounter(enc)
-    setEditNotes(enc.notes || '')
-    setNotesDialogOpen(true)
-  }
-
-  const handleSaveNotes = () => {
-    if (selectedEncounter) {
-      setEncounters(encounters.map(e => 
-        e.id === selectedEncounter.id ? { ...e, notes: editNotes } : e
-      ))
-      setNotesDialogOpen(false)
-    }
-  }
-
-  const handleAddEncounter = () => {
-    if (newEncounter.patient && newEncounter.practitioner && newEncounter.reason) {
-      const enc: Encounter = {
-        id: `ENC-${Date.now()}`,
-        patient: newEncounter.patient,
-        practitioner: newEncounter.practitioner,
-        type: newEncounter.type as EncounterType || 'outpatient',
-        status: newEncounter.status as EncounterStatus || 'planned',
-        date: newEncounter.date || new Date().toLocaleString(),
-        duration: newEncounter.duration || '30 min',
-        reason: newEncounter.reason,
-      }
-      setEncounters([enc, ...encounters])
-      setAddDialogOpen(false)
-      setNewEncounter({ type: 'outpatient', status: 'planned' })
-    }
+  const getStatusConfig = (status?: string) => {
+    return statusConfig[status || 'unknown'] || statusConfig.unknown
   }
 
   return (
@@ -118,27 +142,51 @@ export default function EncountersPage() {
         <div className="flex items-center gap-3">
           <Stethoscope className="h-4 w-4 text-primary"/>
           <h1 className="text-sm font-semibold">Encounters</h1>
-          <span className="text-xs text-muted-foreground">({filteredEncounters.length})</span>
+          <span className="text-xs text-muted-foreground">
+            ({isLoading ? '...' : `${filteredEncounters.length} of ${total}`})
+          </span>
         </div>
-        <Button size="sm" onClick={() => setAddDialogOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Encounter</Button>
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isLoading}>
+          <RefreshCw className={`h-4 w-4 mr-1.5 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       <div className="filter-bar">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search patient..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 h-9 input-sharp" />
+          <Input 
+            placeholder="Search patient, practitioner..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            className="pl-9 h-9 input-sharp" 
+          />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             <SelectItem value="planned">Planned</SelectItem>
+            <SelectItem value="arrived">Arrived</SelectItem>
             <SelectItem value="in-progress">In Progress</SelectItem>
-            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="finished">Finished</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="sm" onClick={() => { setSearchTerm(''); setStatusFilter('all'); }}>Clear filters</Button>
+        <Button variant="ghost" size="sm" onClick={() => { setSearchTerm(''); setStatusFilter('all'); }}>
+          Clear filters
+        </Button>
       </div>
+
+      {isError && (
+        <div className="p-4 m-4 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
+          <AlertCircle className="h-4 w-4" />
+          <span className="text-sm">Failed to load encounters: {(error as Error)?.message || 'Unknown error'}</span>
+          <Button size="sm" variant="outline" onClick={() => refetch()} className="ml-auto">
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <table className="table-sharp">
@@ -155,23 +203,68 @@ export default function EncountersPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredEncounters.map((enc) => (
-              <tr key={enc.id}>
-                <td className="font-medium">{enc.patient}</td>
-                <td className="text-muted-foreground">{enc.practitioner}</td>
-                <td className="capitalize">{enc.type}</td>
-                <td className="text-muted-foreground">{enc.date}</td>
-                <td><span className="inline-flex items-center gap-1 text-muted-foreground"><Clock className="h-3 w-3" />{enc.duration}</span></td>
-                <td>{enc.reason}</td>
-                <td><span className={statusConfig[enc.status].class}>{statusConfig[enc.status].label}</span></td>
-                <td>
-                  <div className="flex items-center gap-3">
-                    <span className="action-link" onClick={() => handleView(enc)}>View</span>
-                    <span className="action-link" onClick={() => handleNotes(enc)}>Notes</span>
-                  </div>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  <td><Skeleton className="h-4 w-24" /></td>
+                  <td><Skeleton className="h-4 w-28" /></td>
+                  <td><Skeleton className="h-4 w-20" /></td>
+                  <td><Skeleton className="h-4 w-32" /></td>
+                  <td><Skeleton className="h-4 w-16" /></td>
+                  <td><Skeleton className="h-4 w-24" /></td>
+                  <td><Skeleton className="h-4 w-20" /></td>
+                  <td><Skeleton className="h-4 w-12" /></td>
+                </tr>
+              ))
+            ) : filteredEncounters.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="text-center py-8 text-muted-foreground">
+                  {searchTerm ? 'No encounters match your search' : 'No encounters found in Aidbox'}
                 </td>
               </tr>
-            ))}
+            ) : (
+              filteredEncounters.map((enc) => {
+                const patientId = getPatientId(enc)
+                return (
+                  <tr key={enc.id}>
+                    <td className="font-medium">
+                      {patientId ? (
+                        <Link href={`/patients/${patientId}`} className="hover:underline text-primary">
+                          {getPatientName(enc)}
+                        </Link>
+                      ) : (
+                        getPatientName(enc)
+                      )}
+                    </td>
+                    <td className="text-muted-foreground">{getPractitionerName(enc)}</td>
+                    <td className="capitalize">{getEncounterType(enc)}</td>
+                    <td className="text-muted-foreground">{formatDate(enc.period?.start)}</td>
+                    <td>
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {calculateDuration(enc)}
+                      </span>
+                    </td>
+                    <td>{getEncounterReason(enc)}</td>
+                    <td>
+                      <span className={getStatusConfig(enc.status).class}>
+                        {getStatusConfig(enc.status).label}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-3">
+                        <span className="action-link" onClick={() => handleView(enc)}>View</span>
+                        {patientId && (
+                          <Link href={`/patients/${patientId}`} className="action-link inline-flex items-center gap-1">
+                            Chart <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
+            )}
           </tbody>
         </table>
       </div>
@@ -188,147 +281,62 @@ export default function EncountersPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground text-xs">Patient</Label>
-                  <p className="text-sm font-medium">{selectedEncounter.patient}</p>
+                  <p className="text-sm font-medium">{getPatientName(selectedEncounter)}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Practitioner</Label>
-                  <p className="text-sm">{selectedEncounter.practitioner}</p>
+                  <p className="text-sm">{getPractitionerName(selectedEncounter)}</p>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground text-xs">Type</Label>
-                  <p className="text-sm capitalize">{selectedEncounter.type}</p>
+                  <Label className="text-muted-foreground text-xs">Type / Class</Label>
+                  <p className="text-sm capitalize">{getEncounterType(selectedEncounter)}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Status</Label>
-                  <span className={statusConfig[selectedEncounter.status].class}>{statusConfig[selectedEncounter.status].label}</span>
+                  <span className={getStatusConfig(selectedEncounter.status).class}>
+                    {getStatusConfig(selectedEncounter.status).label}
+                  </span>
                 </div>
                 <div>
-                  <Label className="text-muted-foreground text-xs">Date</Label>
-                  <p className="text-sm">{selectedEncounter.date}</p>
+                  <Label className="text-muted-foreground text-xs">Start Date</Label>
+                  <p className="text-sm">{formatDate(selectedEncounter.period?.start)}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-xs">Duration</Label>
-                  <p className="text-sm">{selectedEncounter.duration}</p>
+                  <p className="text-sm">{calculateDuration(selectedEncounter)}</p>
                 </div>
               </div>
               <div>
                 <Label className="text-muted-foreground text-xs">Reason</Label>
-                <p className="text-sm">{selectedEncounter.reason}</p>
+                <p className="text-sm">{getEncounterReason(selectedEncounter)}</p>
               </div>
-              {selectedEncounter.vitals && (
-                <div>
-                  <Label className="text-muted-foreground text-xs">Vitals</Label>
-                  <div className="flex gap-4 text-sm mt-1">
-                    <span>BP: {selectedEncounter.vitals.bp}</span>
-                    <span>HR: {selectedEncounter.vitals.hr}</span>
-                    <span>Temp: {selectedEncounter.vitals.temp}</span>
-                  </div>
-                </div>
-              )}
-              {selectedEncounter.diagnosis && (
+              {getDiagnosis(selectedEncounter) && (
                 <div>
                   <Label className="text-muted-foreground text-xs">Diagnosis</Label>
-                  <p className="text-sm">{selectedEncounter.diagnosis}</p>
+                  <p className="text-sm">{getDiagnosis(selectedEncounter)}</p>
                 </div>
               )}
-              {selectedEncounter.notes && (
+              {selectedEncounter.serviceProvider?.display && (
                 <div>
-                  <Label className="text-muted-foreground text-xs">Notes</Label>
-                  <p className="text-sm">{selectedEncounter.notes}</p>
+                  <Label className="text-muted-foreground text-xs">Service Provider</Label>
+                  <p className="text-sm">{selectedEncounter.serviceProvider.display}</p>
+                </div>
+              )}
+              {selectedEncounter.location?.[0]?.location?.display && (
+                <div>
+                  <Label className="text-muted-foreground text-xs">Location</Label>
+                  <p className="text-sm">{selectedEncounter.location[0].location.display}</p>
                 </div>
               )}
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>Close</Button>
-            <Button onClick={() => { setViewDialogOpen(false); handleNotes(selectedEncounter!); }}>Edit Notes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Notes Dialog */}
-      <Dialog open={notesDialogOpen} onOpenChange={setNotesDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Encounter Notes</DialogTitle>
-            <DialogDescription>{selectedEncounter?.patient} - {selectedEncounter?.reason}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Textarea 
-              placeholder="Enter encounter notes..." 
-              value={editNotes} 
-              onChange={(e) => setEditNotes(e.target.value)}
-              rows={8}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNotesDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveNotes}>Save Notes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Encounter Dialog */}
-      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>New Encounter</DialogTitle>
-            <DialogDescription>Create a new patient encounter</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Patient *</Label>
-              <Select value={newEncounter.patient || ''} onValueChange={(v) => setNewEncounter({ ...newEncounter, patient: v })}>
-                <SelectTrigger><SelectValue placeholder="Select patient" /></SelectTrigger>
-                <SelectContent>
-                  {patients.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Practitioner *</Label>
-              <Select value={newEncounter.practitioner || ''} onValueChange={(v) => setNewEncounter({ ...newEncounter, practitioner: v })}>
-                <SelectTrigger><SelectValue placeholder="Select practitioner" /></SelectTrigger>
-                <SelectContent>
-                  {practitioners.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select value={newEncounter.type || 'outpatient'} onValueChange={(v) => setNewEncounter({ ...newEncounter, type: v as EncounterType })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="outpatient">Outpatient</SelectItem>
-                    <SelectItem value="inpatient">Inpatient</SelectItem>
-                    <SelectItem value="emergency">Emergency</SelectItem>
-                    <SelectItem value="telehealth">Telehealth</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Duration</Label>
-                <Select value={newEncounter.duration || '30 min'} onValueChange={(v) => setNewEncounter({ ...newEncounter, duration: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="15 min">15 min</SelectItem>
-                    <SelectItem value="30 min">30 min</SelectItem>
-                    <SelectItem value="45 min">45 min</SelectItem>
-                    <SelectItem value="1 hr">1 hour</SelectItem>
-                    <SelectItem value="2 hr">2 hours</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Reason *</Label>
-              <Input placeholder="e.g., Follow-up, Annual Physical" value={newEncounter.reason || ''} onChange={(e) => setNewEncounter({ ...newEncounter, reason: e.target.value })} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddEncounter}>Create Encounter</Button>
+            {selectedEncounter && getPatientId(selectedEncounter) && (
+              <Link href={`/patients/${getPatientId(selectedEncounter)}`}>
+                <Button>Open Patient Chart</Button>
+              </Link>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

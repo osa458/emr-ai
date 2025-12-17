@@ -133,6 +133,11 @@ async function seed() {
       await fhirCreate<DocumentReference>(note)
     }
 
+    // Create PT/OT/ST notes for clinically appropriate patients
+    for (const therapyNote of makeTherapyNotes(patientData, patient.id!, encounter.id!)) {
+      await fhirCreate<DocumentReference>(therapyNote)
+    }
+
     // Create procedures
     for (const proc of makeProcedures(patientData, patient.id!, encounter.id!)) {
       await fhirCreate<Procedure>(proc)
@@ -320,6 +325,358 @@ function makeNotes(p: PatientSeed, patientId: string, encounterId: string): Docu
       { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'RN' },
     ],
   })
+
+  return notes
+}
+
+// Generate PT/OT/ST therapy notes for clinically appropriate patients
+function makeTherapyNotes(p: PatientSeed, patientId: string, encounterId: string): DocumentReference[] {
+  const notes: DocumentReference[] = []
+  const age = new Date().getFullYear() - new Date(p.birthDate).getFullYear()
+
+  // William Anderson - Hip Fracture Post-Op (definitely needs PT/OT)
+  if (p.reason.includes('Hip Fracture')) {
+    const ptContent = `PHYSICAL THERAPY EVALUATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: PT Sarah Mitchell, DPT
+
+ASSESSMENT:
+Patient is an ${age}-year-old male status post total hip arthroplasty on ${new Date(p.admitDate).toLocaleDateString()}. Patient presents with decreased mobility, impaired balance, and weakness in lower extremities.
+
+FUNCTIONAL STATUS:
+- Ambulation: Patient ambulated 50 feet with rolling walker, minimal assist x1
+- Gait: Antalgic gait pattern, decreased weight bearing on surgical side
+- Balance: Impaired static and dynamic balance, requires assistive device
+- Stairs: Able to negotiate 2 steps with rail, minimal assist
+- Transfers: Bed to chair with minimal assist, chair to standing with minimal assist
+- Strength: Hip flexors 3/5, hip abductors 3/5, quadriceps 3/5 on surgical side
+
+RECOMMENDATIONS:
+1. Continue inpatient PT daily focusing on:
+   - Progressive ambulation with rolling walker
+   - Lower extremity strengthening exercises
+   - Balance training
+   - Stair negotiation training
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - Rolling walker (medically necessary for safe ambulation)
+   - Bedside commode (for nighttime safety)
+   - Shower chair (for safe bathing)
+   - Raised toilet seat (for safe transfers)
+
+3. Discharge planning: Patient will be safe for discharge home with rolling walker and recommended DME. Recommend outpatient PT 2-3x/week for 4-6 weeks.
+
+PROGNOSIS: Good with continued therapy and equipment support.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Physical Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(1),
+      author: [{ display: 'PT Sarah Mitchell, DPT' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(ptContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Physical Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Physical Therapist' },
+      ],
+    })
+
+    const otContent = `OCCUPATIONAL THERAPY EVALUATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: OT Jennifer Martinez, OTR/L
+
+ASSESSMENT:
+Patient is an ${age}-year-old male status post hip arthroplasty. Patient requires assistance with ADLs and home safety modifications.
+
+FUNCTIONAL STATUS:
+- Upper body strength: 4/5 bilateral
+- ADLs: Requires minimal assist with dressing lower body, independent with upper body
+- Fine motor: Intact, no deficits noted
+- Home safety: Lives in single-story home with 2 steps at entrance
+
+RECOMMENDATIONS:
+1. Continue inpatient OT focusing on:
+   - Lower body dressing techniques
+   - Energy conservation techniques
+   - Home safety education
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - Shower chair (medically necessary for safe bathing)
+   - Grab bars in bathroom (for safety during transfers)
+   - Long-handled reacher (for lower body dressing)
+   - Sock aid (for independent lower body dressing)
+
+3. Discharge planning: Patient will benefit from home health OT for 2-3 weeks post-discharge.
+
+PROGNOSIS: Good with equipment support and continued therapy.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Occupational Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(1),
+      author: [{ display: 'OT Jennifer Martinez, OTR/L' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(otContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Occupational Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Occupational Therapist' },
+      ],
+    })
+  }
+
+  // Robert Johnson - AKI, elderly (needs PT/OT for deconditioning)
+  if (p.reason.includes('Acute Kidney Injury') && age >= 70) {
+    const ptContent = `PHYSICAL THERAPY EVALUATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: PT Michael Chen, DPT
+
+ASSESSMENT:
+Patient is an ${age}-year-old male with acute kidney injury and deconditioning from hospitalization. Patient demonstrates decreased endurance and mobility.
+
+FUNCTIONAL STATUS:
+- Ambulation: Patient ambulated 100 feet with rolling walker, standby assist
+- Gait: Slow, steady with assistive device
+- Balance: Mild impairment, requires assistive device for safety
+- Endurance: Decreased, requires rest breaks after 50 feet
+- Strength: Lower extremities 4/5, generalized weakness
+
+RECOMMENDATIONS:
+1. Continue inpatient PT focusing on:
+   - Progressive ambulation and endurance training
+   - Lower extremity strengthening
+   - Balance exercises
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - Rolling walker (medically necessary for safe ambulation and fall prevention)
+
+3. Discharge planning: Patient will be safe for discharge home with rolling walker. Recommend home health PT 2x/week for 2-3 weeks.
+
+PROGNOSIS: Good with continued therapy and equipment support.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Physical Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(2),
+      author: [{ display: 'PT Michael Chen, DPT' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(ptContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Physical Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Physical Therapist' },
+      ],
+    })
+  }
+
+  // Sarah Williams - COPD (needs PT/OT for pulmonary rehab)
+  if (p.reason.includes('COPD')) {
+    const ptContent = `PHYSICAL THERAPY EVALUATION - PULMONARY REHABILITATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: PT David Kim, DPT
+
+ASSESSMENT:
+Patient is a ${age}-year-old female with COPD exacerbation. Patient demonstrates decreased exercise tolerance and dyspnea with minimal exertion.
+
+FUNCTIONAL STATUS:
+- Ambulation: Patient ambulated 75 feet on room air, SpO2 dropped to 88%, required rest
+- Exercise tolerance: Severely limited by dyspnea
+- Oxygen requirement: 2L NC at rest, 4L NC with ambulation
+- Strength: Upper and lower extremities 4/5
+- Breathing pattern: Pursed lip breathing, accessory muscle use
+
+RECOMMENDATIONS:
+1. Continue inpatient PT focusing on:
+   - Pulmonary rehabilitation exercises
+   - Energy conservation techniques
+   - Breathing exercises and techniques
+   - Progressive ambulation with oxygen
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - Home oxygen concentrator (medically necessary - patient requires 2-4L NC)
+   - Rolling walker with oxygen holder (for safe ambulation with O2)
+   - Pulse oximeter (for home monitoring)
+
+3. Discharge planning: Patient will require home oxygen. Recommend outpatient pulmonary rehabilitation program 2-3x/week.
+
+PROGNOSIS: Good with oxygen support and continued pulmonary rehabilitation.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Physical Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(2),
+      author: [{ display: 'PT David Kim, DPT' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(ptContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Physical Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Physical Therapist' },
+      ],
+    })
+  }
+
+  // John Smith - CHF (needs PT/OT for cardiac rehab and mobility)
+  if (p.reason.includes('CHF')) {
+    const ptContent = `PHYSICAL THERAPY EVALUATION - CARDIAC REHABILITATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: PT Amanda Rodriguez, DPT
+
+ASSESSMENT:
+Patient is a ${age}-year-old male with heart failure exacerbation. Patient demonstrates decreased exercise tolerance, lower extremity edema, and generalized weakness.
+
+FUNCTIONAL STATUS:
+- Ambulation: Patient ambulated 120 feet with rolling walker, minimal assist
+- Gait: Slow, steady, no shortness of breath at rest
+- Exercise tolerance: Limited by fatigue, requires rest breaks
+- Lower extremity edema: 1+ bilateral, improved from admission
+- Strength: Lower extremities 4/5, generalized deconditioning
+
+RECOMMENDATIONS:
+1. Continue inpatient PT focusing on:
+   - Cardiac rehabilitation exercises
+   - Progressive ambulation
+   - Lower extremity strengthening
+   - Energy conservation techniques
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - Rolling walker (medically necessary for safe ambulation and fall prevention)
+   - Compression stockings (for edema management)
+
+3. Discharge planning: Patient will be safe for discharge home with rolling walker. Recommend cardiac rehabilitation program 2-3x/week.
+
+PROGNOSIS: Good with continued therapy and equipment support.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Physical Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(1),
+      author: [{ display: 'PT Amanda Rodriguez, DPT' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(ptContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Physical Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Physical Therapist' },
+      ],
+    })
+  }
+
+  // James Wilson - DKA (could be deconditioned, needs PT)
+  if (p.reason.includes('Diabetic Ketoacidosis')) {
+    const ptContent = `PHYSICAL THERAPY EVALUATION
+
+Date: ${new Date().toLocaleDateString()}
+Therapist: PT Robert Thompson, DPT
+
+ASSESSMENT:
+Patient is a ${age}-year-old male with diabetic ketoacidosis, now resolved. Patient demonstrates deconditioning from acute illness and hospitalization.
+
+FUNCTIONAL STATUS:
+- Ambulation: Patient ambulated 150 feet independently, steady gait
+- Balance: Intact, no assistive device required
+- Strength: Lower extremities 4+/5, mild weakness
+- Endurance: Decreased from baseline, requires rest breaks
+
+RECOMMENDATIONS:
+1. Continue inpatient PT focusing on:
+   - Progressive ambulation and endurance training
+   - Lower extremity strengthening
+   - Return to baseline functional level
+
+2. MEDICAL EQUIPMENT RECOMMENDATIONS:
+   - None required at this time. Patient is safe for independent ambulation.
+
+3. Discharge planning: Patient progressing well, may benefit from home exercise program. No DME required.
+
+PROGNOSIS: Excellent, patient should return to baseline function.`
+
+    notes.push({
+      resourceType: 'DocumentReference',
+      status: 'current',
+      docStatus: 'final',
+      type: {
+        coding: [{ system: 'http://loinc.org', code: '68656-0', display: 'Therapy Note' }],
+        text: 'Physical Therapy Note',
+      },
+      category: [{ coding: [{ code: 'clinical-note' }], text: 'Clinical Note' }],
+      subject: { reference: `Patient/${patientId}` },
+      date: isoDaysAgo(1),
+      author: [{ display: 'PT Robert Thompson, DPT' }],
+      content: [{
+        attachment: {
+          contentType: 'text/plain',
+          data: Buffer.from(ptContent).toString('base64'),
+        }
+      }],
+      context: { encounter: [{ reference: `Encounter/${encounterId}` }] },
+      extension: [
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-service', valueString: 'Physical Therapy' },
+        { url: 'http://emmai.local/fhir/StructureDefinition/note-author-role', valueString: 'Physical Therapist' },
+      ],
+    })
+  }
 
   return notes
 }

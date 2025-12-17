@@ -1,0 +1,2 @@
+# Large pharmacy file to exclude from Vercel deployment
+data/medications/drug-ndc-0001-of-0001.json

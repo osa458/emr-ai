@@ -26,8 +26,8 @@ import {
   Edit,
   History,
 } from 'lucide-react'
-import type { MedicationRequest } from '@medplum/fhirtypes'
-import { usePatientMedicationRequests } from '@/hooks/useFHIRData'
+import type { MedicationRequest, ServiceRequest } from '@medplum/fhirtypes'
+import { usePatientMedicationRequests, usePatientOrders } from '@/hooks/useFHIRData'
 
 // Types
 interface OrderSetItem {
@@ -276,6 +276,13 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
     isLoading: medsLoading,
     isError: medsError,
   } = usePatientMedicationRequests(patientId)
+
+  // FHIR-backed service request orders (labs, imaging, consults, etc.)
+  const {
+    data: serviceRequests,
+    isLoading: ordersLoading,
+    isError: ordersError,
+  } = usePatientOrders(patientId)
   
   // Filter orders by search
   const filteredSingleOrders = orderSearch 
@@ -591,6 +598,83 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Active Service Requests from FHIR (labs, imaging, consults) */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4" />
+                Active Orders
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {ordersLoading && (
+                <div className="text-xs text-muted-foreground py-2">
+                  Loading orders…
+                </div>
+              )}
+              {ordersError && !ordersLoading && (
+                <div className="text-xs text-red-600 flex items-center gap-1 py-2">
+                  <AlertCircle className="h-3 w-3" />
+                  Unable to load orders.
+                </div>
+              )}
+              {!ordersLoading && !ordersError && (!serviceRequests || serviceRequests.length === 0) && (
+                <div className="text-xs text-muted-foreground py-2">
+                  No active orders found.
+                </div>
+              )}
+              {!ordersLoading && !ordersError && serviceRequests && serviceRequests.length > 0 && (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {serviceRequests.map((sr: ServiceRequest) => {
+                    const name = sr.code?.text || sr.code?.coding?.[0]?.display || 'Order'
+                    const priority = sr.priority || 'routine'
+                    const authored = sr.authoredOn
+                      ? new Date(sr.authoredOn).toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : undefined
+                    const requester = sr.requester?.display
+
+                    return (
+                      <div
+                        key={sr.id}
+                        className={`border rounded px-2 py-1.5 text-[11px] flex flex-col gap-0.5 ${
+                          priority === 'urgent' || priority === 'stat'
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-medium truncate">{name}</span>
+                          <Badge
+                            variant={sr.status === 'active' ? 'default' : 'secondary'}
+                            className={`text-[9px] ${priority === 'urgent' || priority === 'stat' ? 'bg-red-600' : ''}`}
+                          >
+                            {priority === 'urgent' || priority === 'stat' ? priority.toUpperCase() : sr.status || 'active'}
+                          </Badge>
+                        </div>
+                        {requester && (
+                          <div className="text-[10px] text-muted-foreground">
+                            Ordered by: {requester}
+                          </div>
+                        )}
+                        {authored && (
+                          <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            <span>{authored}</span>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </CardContent>

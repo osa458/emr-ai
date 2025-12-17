@@ -392,4 +392,4 @@ class MFAService {
 export const mfaService = new MFAService()
 
 // Export for testing
-export { MFAService, createMFAProvider, validatePassword }
+export { MFAService, createMFAProvider }

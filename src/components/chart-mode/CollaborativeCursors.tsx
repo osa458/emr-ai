@@ -94,7 +94,6 @@ export function CollaborativeCursors({
                 )}
                 style={{ 
                   backgroundColor: user.color || roleColors[user.role],
-                  ringColor: user.activity === 'editing' ? '#22C55E' : undefined,
                 }}
               >
                 {user.avatar ? (

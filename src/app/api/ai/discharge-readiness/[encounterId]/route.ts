@@ -1,122 +1,225 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { DischargeReadinessOutput } from '@/lib/llm/schemas'
+import { llmRequest } from '@/lib/llm/client'
+import { DischargeReadinessOutputSchema } from '@/lib/llm/schemas'
+import { DISCHARGE_READINESS_SYSTEM_PROMPT, buildDischargeReadinessUserPrompt } from '@/lib/llm/prompts/discharge-readiness'
+
+// Helper to fetch FHIR data through proxy
+async function fhirFetch(path: string, cookieHeader?: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+  const headers: HeadersInit = {}
+  if (cookieHeader) {
+    headers['Cookie'] = cookieHeader
+  }
+  
+  const response = await fetch(`${baseUrl}/api/fhir/proxy?path=${encodeURIComponent(path)}`, {
+    headers,
+  })
+  if (!response.ok) {
+    throw new Error(`FHIR request failed: ${response.status}`)
+  }
+  return response.json()
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { encounterId: string } }
 ) {
   try {
-    // For demo purposes, always return mock data
-    // In production, this would integrate with FHIR and LLM
-    const mockResponse = getMockDischargeReadiness()
+    const { encounterId } = params
+    const cookieHeader = request.headers.get('Cookie') || ''
 
-    // Simulate a small delay for realism
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Fetch encounter to get patient ID
+    const encounterData = await fhirFetch(`/Encounter/${encounterId}`, cookieHeader)
+    const encounter = encounterData.resourceType === 'Encounter' 
+      ? encounterData 
+      : encounterData.entry?.[0]?.resource 
+      || encounterData
+    
+    if (!encounter) {
+      return NextResponse.json(
+        { success: false, error: 'Encounter not found' },
+        { status: 404 }
+      )
+    }
 
-    return NextResponse.json({
-      success: true,
-      data: mockResponse,
-      mock: true,
+    const patientRef = encounter.subject?.reference
+    if (!patientRef) {
+      return NextResponse.json(
+        { success: false, error: 'Encounter has no patient reference' },
+        { status: 400 }
+      )
+    }
+
+    const patientId = patientRef.split('/')[1]
+
+    // Fetch all relevant FHIR data in parallel
+    const [
+      patientBundle,
+      conditionsBundle,
+      vitalsBundle,
+      labsBundle,
+      medicationsBundle,
+      imagingBundle,
+      tasksBundle,
+    ] = await Promise.all([
+      fhirFetch(`/Patient/${patientId}`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/Condition?subject=Patient/${patientId}&clinical-status=active`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/Observation?subject=Patient/${patientId}&category=vital-signs&_sort=-date&_count=50`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/Observation?subject=Patient/${patientId}&category=laboratory&_sort=-date&_count=100`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/MedicationRequest?subject=Patient/${patientId}&status=active`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/DiagnosticReport?subject=Patient/${patientId}&status=registered,preliminary&_sort=-date`, cookieHeader).catch(() => ({ entry: [] })),
+      fhirFetch(`/Task?subject=Patient/${patientId}&status=requested,in-progress`, cookieHeader).catch(() => ({ entry: [] })),
+    ])
+
+    const patient = patientBundle.resourceType === 'Patient' ? patientBundle : patientBundle.entry?.[0]?.resource
+    const conditions = (conditionsBundle.entry || []).map((e: any) => e.resource)
+    const vitals = (vitalsBundle.entry || []).map((e: any) => e.resource)
+    const labs = (labsBundle.entry || []).map((e: any) => e.resource)
+    const medications = (medicationsBundle.entry || []).map((e: any) => e.resource)
+    const pendingTests = (imagingBundle.entry || []).map((e: any) => e.resource)
+    const openConsults = (tasksBundle.entry || []).map((e: any) => e.resource)
+
+    // Build snapshot data for AI prompt
+    const patientName = patient?.name?.[0] ? 
+      `${patient.name[0].given?.join(' ')} ${patient.name[0].family}` : 
+      'Unknown Patient'
+
+    // Analyze vitals stability
+    const latestVitals = vitals.slice(0, 6)
+    const vitalsStable = latestVitals.length > 0
+    const vitalsDetails = latestVitals.map((v: any) => {
+      const name = v.code?.text || v.code?.coding?.[0]?.display || 'Unknown'
+      const value = v.valueQuantity?.value
+      const unit = v.valueQuantity?.unit || ''
+      return `${name}: ${value}${unit}`
     })
+
+    // Analyze lab trends
+    const recentLabs = labs.slice(0, 10)
+    const abnormalLabs = recentLabs.filter((l: any) => {
+      const interp = l.interpretation?.[0]?.coding?.[0]?.code
+      return interp === 'H' || interp === 'L' || interp === 'HH' || interp === 'LL'
+    })
+    const labsTrending = abnormalLabs.length === 0 ? 'stable' : 'needs review'
+    const labDetails = abnormalLabs.slice(0, 5).map((l: any) => {
+      const name = l.code?.text || l.code?.coding?.[0]?.display || 'Unknown'
+      const value = l.valueQuantity?.value
+      const unit = l.valueQuantity?.unit || ''
+      const flag = l.interpretation?.[0]?.coding?.[0]?.code
+      return `${name}: ${value}${unit} [${flag}]`
+    })
+
+    // Check for IV medications
+    const onIVMeds = medications.some((m: any) => {
+      const route = m.dosageInstruction?.[0]?.route?.coding?.[0]?.code
+      return route === 'IV' || route === 'IVINFUSION'
+    })
+
+    // Build snapshot
+    const snapshot = {
+      patient: {
+        name: patientName,
+        birthDate: patient?.birthDate,
+      },
+      encounter: {
+        start: encounter.period?.start,
+        attendingName: encounter.participant?.find((p: any) => 
+          p.type?.some((t: any) => t.coding?.some((c: any) => c.code === 'ATND'))
+        )?.individual?.display || 'Not specified',
+      },
+      conditions: conditions.map((c: any) => ({
+        name: c.code?.text || c.code?.coding?.[0]?.display || 'Unknown',
+        status: c.clinicalStatus?.coding?.[0]?.code || 'active',
+      })),
+      clinicalStability: {
+        vitalsStable,
+        vitalsDetails,
+        labsTrending,
+        oxygenRequirement: 'Room air', // Would need to check for oxygen orders
+        onIVMedications: onIVMeds,
+        highRiskMedications: [], // Would need medication risk analysis
+      },
+      workupCompleteness: {
+        pendingTestCount: pendingTests.length,
+        pendingTests: pendingTests.map((t: any) => ({
+          name: t.code?.text || t.code?.coding?.[0]?.display || 'Unknown test',
+          orderedDate: t.effectiveDateTime || 'Unknown',
+        })),
+        openConsultCount: openConsults.length,
+        openConsults: openConsults.map((c: any) => ({
+          specialty: c.code?.text || 'Consult',
+          requestedDate: c.authoredOn || 'Unknown',
+        })),
+      },
+      currentMedications: medications.map((m: any) => ({
+        name: m.medicationCodeableConcept?.text || m.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown',
+      })),
+      scheduledAppointments: [], // Would need to fetch appointments
+    }
+
+    // Build prompt and call AI
+    const userPrompt = buildDischargeReadinessUserPrompt(snapshot)
+
+    try {
+      const aiResponse = await llmRequest<DischargeReadinessOutput>({
+        systemPrompt: DISCHARGE_READINESS_SYSTEM_PROMPT,
+        userPrompt,
+        outputSchema: DischargeReadinessOutputSchema,
+        temperature: 0.3,
+      })
+
+      return NextResponse.json({
+        success: true,
+        data: aiResponse.data,
+        mock: false,
+        usage: aiResponse.usage,
+      })
+    } catch (llmError) {
+      console.error('LLM error, falling back to rule-based assessment:', llmError)
+      // Fallback to rule-based assessment if LLM fails
+      const fallbackResponse: DischargeReadinessOutput = {
+        readinessLevel: vitalsStable && labsTrending === 'stable' && pendingTests.length === 0 ? 'READY_SOON' : 'NOT_READY',
+        readinessScore: vitalsStable ? 60 : 40,
+        readinessReasons: vitalsStable ? ['Vitals stable'] : ['Clinical status needs review'],
+        blockingFactors: pendingTests.map((t: any) => ({
+          factor: t.code?.text || 'Pending test',
+          category: 'workup',
+          details: 'Test results pending',
+        })),
+        clinicalStatus: {
+          vitalsStable,
+          vitalsNotes: vitalsDetails.join('; ') || 'No recent vitals',
+          labsAcceptable: labsTrending === 'stable',
+          labsNotes: labDetails.join('; ') || 'No abnormal labs',
+          symptomsControlled: true,
+          symptomsNotes: 'Based on available data',
+          oxygenRequirement: 'Room air',
+          mobilityStatus: 'Not assessed',
+        },
+        followupNeeds: [],
+        pendingTests: pendingTests.map((t: any) => ({
+          testName: t.code?.text || 'Unknown test',
+          orderedDate: t.effectiveDateTime || new Date().toISOString(),
+          criticalForDischarge: false,
+        })),
+        safetyChecks: [],
+        disclaimer: 'This is a rule-based assessment. AI analysis unavailable.',
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: fallbackResponse,
+        mock: false,
+        fallback: true,
+      })
+    }
   } catch (error) {
     console.error('Discharge readiness error:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to assess discharge readiness' },
+      { success: false, error: `Failed to assess discharge readiness: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     )
   }
 }
 
-function getMockDischargeReadiness(): DischargeReadinessOutput {
-  return {
-    readinessLevel: 'READY_SOON',
-    readinessScore: 75,
-    readinessReasons: [
-      'Vitals have been stable for 24 hours',
-      'Patient tolerating oral medications',
-      'Ambulating independently',
-    ],
-    blockingFactors: [
-      {
-        factor: 'Pending echocardiogram results',
-        category: 'workup',
-        details: 'Echo ordered yesterday, results expected today',
-        estimatedResolutionTime: '4-6 hours',
-        responsibleParty: 'Cardiology',
-      },
-      {
-        factor: 'Home oxygen setup',
-        category: 'logistical',
-        details: 'Patient will need 2L NC at home, DME company notified',
-        estimatedResolutionTime: '1-2 days',
-        responsibleParty: 'Case Management',
-      },
-    ],
-    clinicalStatus: {
-      vitalsStable: true,
-      vitalsNotes: 'BP 128/76, HR 72, RR 16, SpO2 96% on 2L NC',
-      labsAcceptable: true,
-      labsNotes: 'Creatinine improved from 1.8 to 1.2, WBC normalizing',
-      symptomsControlled: true,
-      symptomsNotes: 'Dyspnea improved, no chest pain',
-      oxygenRequirement: '2L nasal cannula',
-      mobilityStatus: 'Ambulating with walker, PT cleared for home',
-    },
-    followupNeeds: [
-      {
-        specialty: 'Cardiology',
-        timeframe: 'within_1_week',
-        reason: 'Post-CHF exacerbation follow-up',
-        mode: 'in_person',
-        priority: 'critical',
-      },
-      {
-        specialty: 'Primary Care',
-        timeframe: 'within_2_weeks',
-        reason: 'Medication reconciliation and BP check',
-        mode: 'either',
-        priority: 'important',
-      },
-    ],
-    pendingTests: [
-      {
-        testName: 'Echocardiogram',
-        orderedDate: new Date().toISOString(),
-        expectedResultDate: 'Today',
-        whyItMattersPatient: 'This test shows how well your heart is pumping',
-        whyItMattersClinician: 'Assess EF recovery post-diuresis',
-        responsiblePhysicianRole: 'Cardiology',
-        criticalForDischarge: true,
-      },
-    ],
-    safetyChecks: [
-      {
-        item: 'Medication reconciliation completed',
-        category: 'medication',
-        completed: true,
-        notes: 'All medications reviewed with patient',
-      },
-      {
-        item: 'Home oxygen arranged',
-        category: 'equipment',
-        completed: false,
-        notes: 'DME company contacted, delivery pending',
-      },
-      {
-        item: 'Daily weight monitoring education',
-        category: 'education',
-        completed: true,
-        notes: 'Patient verbalized understanding',
-      },
-      {
-        item: 'Cardiology follow-up scheduled',
-        category: 'followup',
-        completed: false,
-      },
-    ],
-    estimatedDischargeDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-    dischargeDisposition: 'home_with_services',
-    disclaimer:
-      'This is an AI-generated assessment for decision support only. Clinical judgment is required for all discharge decisions.',
-  }
-}

@@ -1,6 +1,7 @@
 /**
  * useFHIRData Hooks
  * Fetches clinical data (labs, vitals, medications, imaging) from FHIR/Aidbox
+ * Uses /api/fhir/proxy to handle authentication
  */
 
 'use client'
@@ -17,30 +18,32 @@ import type {
   Task,
   CarePlan,
   Coverage,
-  ServiceRequest
+  ServiceRequest,
+  Encounter,
+  CareTeam
 } from '@medplum/fhirtypes'
 
-const FHIR_BASE = process.env.NEXT_PUBLIC_AIDBOX_BASE_URL ||
-  process.env.NEXT_PUBLIC_FHIR_BASE_URL ||
-  'https://aoadhslfxc.edge.aidbox.app'
+// Helper to fetch through the authenticated proxy
+async function fhirFetch(path: string) {
+  const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(path)}`)
+  if (!response.ok) {
+    throw new Error(`FHIR request failed: ${response.status}`)
+  }
+  return response.json()
+}
 
 // === Labs Hook ===
 export function usePatientLabs(patientId: string | undefined, count = 100) {
   return useQuery({
     queryKey: ['labs', patientId, count],
     queryFn: async (): Promise<Observation[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Observation?patient=${patientId}&category=laboratory&_sort=-date&_count=${count}`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Observation?subject=Patient/${patientId}&category=laboratory&_sort=-date&_count=${count}`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch labs: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Observation)
     },
     enabled: !!patientId,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   })
 }
 
@@ -49,18 +52,13 @@ export function usePatientVitals(patientId: string | undefined, count = 50) {
   return useQuery({
     queryKey: ['vitals', patientId, count],
     queryFn: async (): Promise<Observation[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Observation?patient=${patientId}&category=vital-signs&_sort=-date&_count=${count}`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Observation?subject=Patient/${patientId}&category=vital-signs&_sort=-date&_count=${count}`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch vitals: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Observation)
     },
     enabled: !!patientId,
-    staleTime: 1 * 60 * 1000, // 1 minute (vitals update more frequently)
+    staleTime: 1 * 60 * 1000,
   })
 }
 
@@ -69,14 +67,9 @@ export function usePatientMedicationRequests(patientId: string | undefined) {
   return useQuery({
     queryKey: ['medicationRequests', patientId],
     queryFn: async (): Promise<MedicationRequest[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/MedicationRequest?patient=${patientId}&status=active&_sort=-authoredon`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/MedicationRequest?subject=Patient/${patientId}&status=active&_sort=-authoredon`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch medication requests: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as MedicationRequest)
     },
     enabled: !!patientId,
@@ -88,18 +81,12 @@ export function usePatientMedicationStatements(patientId: string | undefined) {
   return useQuery({
     queryKey: ['medicationStatements', patientId],
     queryFn: async (): Promise<MedicationStatement[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/MedicationStatement?patient=${patientId}&status=active`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/MedicationStatement?subject=Patient/${patientId}&status=active`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch medication statements: ${response.status}`)
-      }
-      const bundle = await response.json()
-      // Filter for community/home medications
       const meds = (bundle.entry || []).map((e: any) => e.resource as MedicationStatement)
       return meds.filter((m: MedicationStatement) =>
-        m.category?.coding?.some((c: any) => c.code === 'community') || true // Include all if no category
+        m.category?.coding?.some((c: any) => c.code === 'community') || true
       )
     },
     enabled: !!patientId,
@@ -126,17 +113,10 @@ export function usePatientImaging(patientId: string | undefined, count = 50) {
   return useQuery({
     queryKey: ['imaging', patientId, count],
     queryFn: async (): Promise<DiagnosticReport[]> => {
-      // Try with category=RAD first, fallback to all diagnostic reports
-      const response = await fetch(
-        `${FHIR_BASE}/DiagnosticReport?patient=${patientId}&_sort=-date&_count=${count}`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/DiagnosticReport?subject=Patient/${patientId}&_sort=-date&_count=${count}`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch imaging: ${response.status}`)
-      }
-      const bundle = await response.json()
       const reports = (bundle.entry || []).map((e: any) => e.resource as DiagnosticReport)
-      // Filter for imaging-related reports (RAD category or common imaging codes)
       return reports.filter((r: DiagnosticReport) => {
         const isRad = r.category?.some((c: any) =>
           c.coding?.some((cod: any) => cod.code === 'RAD' || cod.code === 'imaging')
@@ -145,7 +125,7 @@ export function usePatientImaging(patientId: string | undefined, count = 50) {
         const isImagingName = name.includes('x-ray') || name.includes('ct') ||
           name.includes('mri') || name.includes('ultrasound') ||
           name.includes('echo') || name.includes('scan')
-        return isRad || isImagingName || reports.length <= 10 // If few results, show all
+        return isRad || isImagingName || reports.length <= 10
       })
     },
     enabled: !!patientId,
@@ -158,14 +138,9 @@ export function usePatientConditions(patientId: string | undefined) {
   return useQuery({
     queryKey: ['conditions', patientId],
     queryFn: async (): Promise<Condition[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Condition?patient=${patientId}&clinical-status=active`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Condition?subject=Patient/${patientId}&clinical-status=active`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch conditions: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Condition)
     },
     enabled: !!patientId,
@@ -178,14 +153,9 @@ export function usePatientAppointments(patientId: string | undefined) {
   return useQuery({
     queryKey: ['appointments', patientId],
     queryFn: async (): Promise<Appointment[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Appointment?patient=${patientId}&status=proposed,pending,booked&_sort=date`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Appointment?actor=Patient/${patientId}&status=proposed,pending,booked&_sort=date`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch appointments: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Appointment)
     },
     enabled: !!patientId,
@@ -198,14 +168,9 @@ export function useAllAppointments() {
   return useQuery({
     queryKey: ['appointments', 'all'],
     queryFn: async (): Promise<Appointment[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Appointment?status=proposed,pending,booked,arrived&_sort=date&_count=100`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Appointment?status=proposed,pending,booked,arrived&_sort=date&_count=100`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch appointments: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Appointment)
     },
     staleTime: 1 * 60 * 1000,
@@ -217,14 +182,9 @@ export function usePatientProcedures(patientId: string | undefined) {
   return useQuery({
     queryKey: ['procedures', patientId],
     queryFn: async (): Promise<Procedure[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Procedure?patient=${patientId}&_sort=-date&_count=50`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Procedure?subject=Patient/${patientId}&_sort=-date&_count=50`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch procedures: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Procedure)
     },
     enabled: !!patientId,
@@ -237,14 +197,9 @@ export function usePatientTasks(patientId: string | undefined) {
   return useQuery({
     queryKey: ['tasks', patientId],
     queryFn: async (): Promise<Task[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Task?patient=${patientId}&status=requested,in-progress,ready&_sort=-authored-on`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Task?subject=Patient/${patientId}&status=requested,in-progress,ready&_sort=-authored-on`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tasks: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Task)
     },
     enabled: !!patientId,
@@ -257,14 +212,9 @@ export function usePatientCarePlans(patientId: string | undefined) {
   return useQuery({
     queryKey: ['carePlans', patientId],
     queryFn: async (): Promise<CarePlan[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/CarePlan?patient=${patientId}&status=active`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/CarePlan?subject=Patient/${patientId}&status=active`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch care plans: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as CarePlan)
     },
     enabled: !!patientId,
@@ -277,18 +227,13 @@ export function usePatientCoverage(patientId: string | undefined) {
   return useQuery({
     queryKey: ['coverage', patientId],
     queryFn: async (): Promise<Coverage[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/Coverage?patient=${patientId}&status=active`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      const bundle = await fhirFetch(
+        `/Coverage?beneficiary=Patient/${patientId}&status=active`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch coverage: ${response.status}`)
-      }
-      const bundle = await response.json()
       return (bundle.entry || []).map((e: any) => e.resource as Coverage)
     },
     enabled: !!patientId,
-    staleTime: 10 * 60 * 1000, // Insurance changes infrequently
+    staleTime: 10 * 60 * 1000,
   })
 }
 
@@ -297,17 +242,118 @@ export function usePatientOrders(patientId: string | undefined) {
   return useQuery({
     queryKey: ['orders', patientId],
     queryFn: async (): Promise<ServiceRequest[]> => {
-      const response = await fetch(
-        `${FHIR_BASE}/ServiceRequest?patient=${patientId}&status=active,completed&_sort=-authored`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
+      // Aidbox requires dot notation for reference searches
+      const bundle = await fhirFetch(
+        `/ServiceRequest?.subject.id=${patientId}&status=active,completed&_sort=-authored`
       )
-      if (!response.ok) {
-        throw new Error(`Failed to fetch orders: ${response.status}`)
+      // Fallback: if no results, try fetching all and filter client-side
+      const entries = bundle.entry || []
+      if (entries.length === 0) {
+        const allBundle = await fhirFetch(`/ServiceRequest?status=active&_count=100`)
+        const allEntries = allBundle.entry || []
+        return allEntries
+          .map((e: any) => e.resource as ServiceRequest)
+          .filter((sr: ServiceRequest) => {
+            const ref = sr.subject?.reference || ''
+            return ref.includes(patientId || '')
+          })
       }
-      const bundle = await response.json()
-      return (bundle.entry || []).map((e: any) => e.resource as ServiceRequest)
+      return entries.map((e: any) => e.resource as ServiceRequest)
     },
     enabled: !!patientId,
     staleTime: 2 * 60 * 1000,
+  })
+}
+
+// === Encounters Hooks ===
+// Note: usePatientEncounters is in useEncounter.ts to avoid duplicate exports
+
+// All encounters (for encounters list page)
+export function useAllEncounters(params?: { status?: string; _count?: number }) {
+  const status = params?.status
+  const count = params?._count || 50
+  
+  return useQuery({
+    queryKey: ['encounters', 'all', status, count],
+    queryFn: async (): Promise<{ encounters: Encounter[]; total: number }> => {
+      const searchParams = new URLSearchParams()
+      searchParams.set('_count', String(count))
+      searchParams.set('_sort', '-date')
+      if (status && status !== 'all') searchParams.set('status', status)
+      
+      const response = await fetch(
+        `/api/encounters?${searchParams.toString()}`
+      )
+      if (!response.ok) {
+        throw new Error(`Failed to fetch encounters: ${response.status}`)
+      }
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch encounters')
+      }
+      return { encounters: result.data, total: result.total }
+    },
+    staleTime: 1 * 60 * 1000,
+  })
+}
+
+// === CareTeam Hook ===
+export function usePatientCareTeam(patientId: string | undefined) {
+  return useQuery({
+    queryKey: ['careTeam', patientId],
+    queryFn: async (): Promise<CareTeam[]> => {
+      const bundle = await fhirFetch(
+        `/CareTeam?patient=${patientId}&status=active`
+      )
+      return (bundle.entry || []).map((e: any) => e.resource as CareTeam)
+    },
+    enabled: !!patientId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// === Allergies Hook ===
+export function usePatientAllergies(patientId: string | undefined) {
+  return useQuery({
+    queryKey: ['allergies', patientId],
+    queryFn: async () => {
+      const response = await fetch(`/api/allergy-intolerances?patient=${patientId}&clinical-status=active`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch allergies: ${response.status}`)
+      }
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch allergies')
+      }
+      return result.data || []
+    },
+    enabled: !!patientId,
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+// === Practitioners Hook ===
+export function useAllPractitioners(params?: { name?: string; _count?: number }) {
+  const name = params?.name
+  const count = params?._count || 100
+  
+  return useQuery({
+    queryKey: ['practitioners', 'all', name, count],
+    queryFn: async () => {
+      const searchParams = new URLSearchParams()
+      searchParams.set('_count', String(count))
+      if (name) searchParams.set('name', name)
+      
+      const response = await fetch(`/api/practitioners?${searchParams.toString()}`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch practitioners: ${response.status}`)
+      }
+      const result = await response.json()
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch practitioners')
+      }
+      return { practitioners: result.data, total: result.total }
+    },
+    staleTime: 5 * 60 * 1000,
   })
 }

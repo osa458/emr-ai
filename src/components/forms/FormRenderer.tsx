@@ -184,7 +184,6 @@ export function FormRenderer({
         return (
           <div key={item.linkId} className="flex items-center gap-2">
             <Checkbox
-              id={item.linkId}
               checked={responses[item.linkId] || false}
               onCheckedChange={(checked) => updateResponse(item.linkId, checked)}
             />
