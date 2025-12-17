@@ -1351,7 +1351,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   ]
   
   // Check for low electrolytes from labs
-  const allLabs = Object.values(labsData).flat()
+  const allLabs = Object.values(labsData).flat() as Array<{ name: string; value: string | number }>
   const lowElectrolytes = allLabs.filter(lab => {
     const val = typeof lab.value === 'number' ? lab.value : parseFloat(lab.value as string)
     if (isNaN(val)) return false
