@@ -40,3 +40,7 @@ prisma/migrations
 # IDE
 .idea
 .vscode
+
+# Large data files
+data/synthea/
+data/medications/drug-ndc-*.json
