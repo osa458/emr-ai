@@ -1010,7 +1010,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   
   // Transform FHIR data to display format - NO MOCK DATA FALLBACKS
   const vitalsData = fhirVitals.length > 0 ? transformVitalsFromFHIR(fhirVitals) : defaultVitalsData
-  const labsData = fhirLabs.length > 0 ? transformLabsFromFHIR(fhirLabs) : {}
+  const labsData: Record<string, Array<{ name: string; value: string | number; unit?: string; flag?: string; trend: number[] }>> = fhirLabs.length > 0 ? transformLabsFromFHIR(fhirLabs) : {}
   const imagingData = fhirImaging.length > 0 ? transformImagingFromFHIR(fhirImaging) : []
   const medicationsData = transformMedsFromFHIR(inpatientMedications, homeMedications)
   const apRecommendations = fhirConditions.length > 0 
@@ -1351,7 +1351,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   ]
   
   // Check for low electrolytes from labs
-  const allLabs = Object.values(labsData).flat() as Array<{ name: string; value: string | number }>
+  const allLabs = Object.values(labsData).flat() as Array<{ name: string; value: string | number; unit?: string }>
   const lowElectrolytes = allLabs.filter(lab => {
     const val = typeof lab.value === 'number' ? lab.value : parseFloat(lab.value as string)
     if (isNaN(val)) return false
