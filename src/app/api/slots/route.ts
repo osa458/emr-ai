@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,28 +13,16 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const start = searchParams.get('start')
     const serviceType = searchParams.get('service-type')
-    const _count = searchParams.get('_count') || '100'
-    const _sort = searchParams.get('_sort') || 'start'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (scheduleId) params.set('schedule', scheduleId)
-    if (status) params.set('status', status)
-    if (start) params.set('start', start)
-    if (serviceType) params.set('service-type', serviceType)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Slot').count(_count)
+    if (scheduleId) query = query.where('schedule', scheduleId as any)
+    if (status) query = query.where('status', status as any)
+    if (start) query = query.where('start', start as any)
+    if (serviceType) query = query.where('service-type', serviceType as any)
 
-    const response = await aidboxFetch(`/Slot?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch slots: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const slots = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || slots.length
 

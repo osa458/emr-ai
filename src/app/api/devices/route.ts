@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,26 +13,16 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type')
     const status = searchParams.get('status')
     const identifier = searchParams.get('identifier')
-    const _count = searchParams.get('_count') || '100'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (patientId) params.set('patient', patientId)
-    if (type) params.set('type', type)
-    if (status) params.set('status', status)
-    if (identifier) params.set('identifier', identifier)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Device').count(_count)
+    if (patientId) query = query.where('patient', `Patient/${patientId}` as any)
+    if (type) query = query.where('type', type as any)
+    if (status) query = query.where('status', status as any)
+    if (identifier) query = query.where('identifier', identifier as any)
 
-    const response = await aidboxFetch(`/Device?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch devices: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const devices = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || devices.length
 

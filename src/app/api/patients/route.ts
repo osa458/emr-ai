@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { Patient, Encounter, QuestionnaireResponse } from '@medplum/fhirtypes'
+import { aidbox } from '@/lib/aidbox'
 
 // Generate a unique ID
 function generateId() {
@@ -118,27 +119,32 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // In a real implementation, you would:
-    // 1. Save patient to FHIR server
-    // 2. Save encounter to FHIR server
-    // 3. Save questionnaire responses to FHIR server
-    // 4. Create coverage resource for insurance
-    // 5. Trigger any admission workflows
+    // Save to Aidbox using SDK
+    const createdPatient = await aidbox.resource.create('Patient', patientResource as any)
+    const createdEncounter = await aidbox.resource.create('Encounter', {
+      ...encounterResource,
+      subject: { reference: `Patient/${createdPatient.id}` }
+    } as any)
 
-    // For now, we'll return success with the generated IDs
-    // In production, this would integrate with Aidbox (or another FHIR server)
+    // Save questionnaire responses
+    for (const qr of questionnaireResponses) {
+      await aidbox.resource.create('QuestionnaireResponse', {
+        ...qr,
+        subject: { reference: `Patient/${createdPatient.id}` },
+        encounter: { reference: `Encounter/${createdEncounter.id}` }
+      } as any)
+    }
 
-    console.log('New patient admission:', {
-      patient: patientResource,
-      encounter: encounterResource,
-      questionnaireResponses: questionnaireResponses.length,
-      insurance
+    console.log('New patient admission saved to Aidbox:', {
+      patientId: createdPatient.id,
+      encounterId: createdEncounter.id,
+      questionnaireResponses: questionnaireResponses.length
     })
 
     return NextResponse.json({
       success: true,
-      patientId,
-      encounterId,
+      patientId: createdPatient.id,
+      encounterId: createdEncounter.id,
       mrn,
       message: 'Patient admitted successfully'
     })
@@ -153,14 +159,31 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  // Return mock patients list for now
-  // In production, this would query the FHIR server
-  
-  const mockPatients = [
-    { id: 'patient-1', name: 'Robert Johnson', mrn: 'MRN-001', age: 78, gender: 'male', status: 'active' },
-    { id: 'patient-2', name: 'Sarah Williams', mrn: 'MRN-002', age: 58, gender: 'female', status: 'active' },
-    { id: 'patient-3', name: 'John Smith', mrn: 'MRN-003', age: 65, gender: 'male', status: 'active' },
-  ]
+  try {
+    const { searchParams } = new URL(request.url)
+    const _count = parseInt(searchParams.get('_count') || '50')
+    const name = searchParams.get('name')
 
-  return NextResponse.json({ patients: mockPatients })
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Patient').count(_count)
+    if (name) {
+      query = query.where('name', name)
+    }
+
+    const bundle = await query
+    const patients = (bundle.entry || []).map((e: any) => e.resource)
+    const total = bundle.total || patients.length
+
+    return NextResponse.json({
+      success: true,
+      data: patients,
+      total,
+    })
+  } catch (error: any) {
+    console.error('Patients fetch error:', error)
+    return NextResponse.json(
+      { success: false, error: error?.message || 'Failed to fetch patients' },
+      { status: 500 }
+    )
+  }
 }

@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,27 +14,17 @@ export async function GET(request: NextRequest) {
     const organizationId = searchParams.get('organization')
     const locationId = searchParams.get('location')
     const active = searchParams.get('active')
-    const _count = searchParams.get('_count') || '100'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (name) params.set('name', name)
-    if (category) params.set('category', category)
-    if (organizationId) params.set('organization', organizationId)
-    if (locationId) params.set('location', locationId)
-    if (active) params.set('active', active)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('HealthcareService').count(_count)
+    if (name) query = query.where('name', name as any)
+    if (category) query = query.where('category', category as any)
+    if (organizationId) query = query.where('organization', organizationId as any)
+    if (locationId) query = query.where('location', locationId as any)
+    if (active) query = query.where('active', active as any)
 
-    const response = await aidboxFetch(`/HealthcareService?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch healthcare services: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const services = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || services.length
 
@@ -56,26 +46,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const service = {
-      resourceType: 'HealthcareService',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('HealthcareService', {
       active: true,
       ...body,
-    }
-
-    const response = await aidboxFetch('/HealthcareService', {
-      method: 'POST',
-      body: JSON.stringify(service),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create healthcare service: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('HealthcareService create error:', error)

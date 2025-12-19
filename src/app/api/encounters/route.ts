@@ -1,36 +1,30 @@
 /**
  * Encounters API - List and Create
  * FHIR Resource: Encounter
+ * Uses Aidbox SDK for data fetching
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const patientId = searchParams.get('patient')
     const status = searchParams.get('status')
-    const _count = searchParams.get('_count') || '50'
-    const _sort = searchParams.get('_sort') || '-date'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (patientId) params.set('patient', patientId)
-    if (status) params.set('status', status)
-
-    const response = await aidboxFetch(`/Encounter?${params.toString()}`)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Encounter').count(_count)
     
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch encounters: ${error}` },
-        { status: response.status }
-      )
+    if (patientId) {
+      query = query.where('subject', `Patient/${patientId}`)
+    }
+    if (status) {
+      query = query.where('status', status)
     }
 
-    const bundle = await response.json()
+    const bundle = await query
     const encounters = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || encounters.length
 
@@ -52,25 +46,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const encounter = {
-      resourceType: 'Encounter',
-      ...body,
-    }
+    // Use Aidbox SDK to create encounter
+    const created = await aidbox.resource.create('Encounter', body as any)
 
-    const response = await aidboxFetch('/Encounter', {
-      method: 'POST',
-      body: JSON.stringify(encounter),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create encounter: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('Encounter create error:', error)

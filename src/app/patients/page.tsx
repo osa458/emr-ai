@@ -28,7 +28,7 @@ import {
 import { User, Search, UserPlus, ChevronUp, ChevronDown, MoreHorizontal, ListPlus, ListMinus, Check } from 'lucide-react'
 import { PatientNote } from '@/components/patients/PatientNote'
 import { PatientListsSidebar } from '@/components/patients/PatientListsSidebar'
-import { getPatientNote, savePatientNote } from '@/lib/patientNotes'
+import { getAllPatientNotes, savePatientNote } from '@/lib/patientNotes'
 import { 
   getPatientLists, 
   getPatientList, 
@@ -109,16 +109,57 @@ export default function PatientsPage() {
 
   // Load notes from localStorage
   useEffect(() => {
-    const loadedNotes: Record<string, string> = {}
-    mockPatients.forEach((patient) => {
-      loadedNotes[patient.id] = getPatientNote(patient.id)
-    })
-    setNotes(loadedNotes)
+    let mounted = true
+
+    async function load() {
+      try {
+        const ids = getListPatients().map((p) => p.id).filter(Boolean)
+        if (ids.length > 0) {
+          const res = await fetch(`/api/sticky-notes?patientIds=${encodeURIComponent(ids.join(','))}`)
+          if (res.ok) {
+            const data = await res.json()
+            const fromApi = (data?.notesByPatientId || {}) as Record<string, string>
+            if (mounted) setNotes(fromApi)
+            return
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const allNotes = getAllPatientNotes()
+      const loadedNotes: Record<string, string> = {}
+      Object.entries(allNotes).forEach(([patientId, n]) => {
+        loadedNotes[patientId] = n.note || ''
+      })
+      if (mounted) setNotes(loadedNotes)
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const handleNoteSave = (patientId: string, note: string) => {
-    savePatientNote(patientId, note)
-    setNotes((prev) => ({ ...prev, [patientId]: note }))
+    ;(async () => {
+      try {
+        const res = await fetch('/api/sticky-notes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ patientId, note }),
+        })
+        if (res.ok) {
+          setNotes((prev) => ({ ...prev, [patientId]: note }))
+          return
+        }
+      } catch {
+        // ignore
+      }
+
+      savePatientNote(patientId, note)
+      setNotes((prev) => ({ ...prev, [patientId]: note }))
+    })()
   }
 
   const handleSort = (field: SortField) => {

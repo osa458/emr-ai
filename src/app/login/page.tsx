@@ -85,6 +85,16 @@ function LoginForm() {
           <CardDescription>Sign in to access the dashboard</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <Button
+            type="button"
+            className="w-full"
+            variant="outline"
+            disabled={isLoading}
+            onClick={() => signIn('aidbox', { callbackUrl })}
+          >
+            Sign in with Aidbox
+          </Button>
+
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

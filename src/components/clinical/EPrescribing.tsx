@@ -35,6 +35,7 @@ import {
   Printer,
 } from 'lucide-react'
 import { checkDrugAllergyInteractions, checkDrugDrugInteractions } from '@/lib/drug-interactions'
+import { toastSuccess, toastError } from '@/hooks/useToast'
 
 export interface Prescription {
   id: string
@@ -208,8 +209,13 @@ export function EPrescribing({
       })
       setIsDialogOpen(false)
       resetForm()
+      toastSuccess(
+        'Prescription Created',
+        pharmacy ? `${formData.medication} sent to ${pharmacy.name}` : `${formData.medication} saved`
+      )
     } catch (error) {
       console.error('Failed to create prescription:', error)
+      toastError('Failed to Create Prescription', 'Please try again')
     } finally {
       setIsSubmitting(false)
     }

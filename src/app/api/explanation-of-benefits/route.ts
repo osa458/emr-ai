@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,27 +12,15 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get('patient')
     const claimId = searchParams.get('claim')
     const status = searchParams.get('status')
-    const _count = searchParams.get('_count') || '50'
-    const _sort = searchParams.get('_sort') || '-created'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (patientId) params.set('patient', patientId)
-    if (claimId) params.set('claim', claimId)
-    if (status) params.set('status', status)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('ExplanationOfBenefit').count(_count)
+    if (patientId) query = query.where('patient', `Patient/${patientId}` as any)
+    if (claimId) query = query.where('claim', claimId as any)
+    if (status) query = query.where('status', status as any)
 
-    const response = await aidboxFetch(`/ExplanationOfBenefit?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch EOBs: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const eobs = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || eobs.length
 

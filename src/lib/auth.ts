@@ -1,6 +1,62 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
+type AidboxTokenResponse = {
+  access_token?: string
+  refresh_token?: string
+  expires_in?: number
+  token_type?: string
+  userinfo?: {
+    id?: string
+    email?: string
+    resourceType?: string
+    [k: string]: unknown
+  }
+  [k: string]: unknown
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const payload = parts[1]
+    const padded = payload.padEnd(payload.length + (4 - (payload.length % 4)) % 4, '=')
+    const json = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+async function refreshAidboxAccessToken(refreshToken: string) {
+  const baseUrl = process.env.AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_AIDBOX_BASE_URL
+  const clientId = process.env.AIDBOX_OAUTH_CLIENT_ID
+  const clientSecret = process.env.AIDBOX_OAUTH_CLIENT_SECRET
+
+  if (!baseUrl || !clientId) {
+    throw new Error('Aidbox OAuth env missing: AIDBOX_BASE_URL and AIDBOX_OAUTH_CLIENT_ID are required')
+  }
+
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/auth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      ...(clientSecret ? { client_secret: clientSecret } : {}),
+      refresh_token: refreshToken,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Aidbox refresh_token failed: ${response.status} ${errorText}`)
+  }
+
+  const refreshed: AidboxTokenResponse = await response.json()
+  return refreshed
+}
+
 // HIPAA Configuration - import dynamically to avoid circular deps
 const getHIPAAConfig = async () => {
   try {
@@ -45,6 +101,66 @@ const demoUsers = [
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    {
+      id: 'aidbox',
+      name: 'Aidbox',
+      type: 'oauth',
+      clientId: process.env.AIDBOX_OAUTH_CLIENT_ID,
+      clientSecret: process.env.AIDBOX_OAUTH_CLIENT_SECRET,
+      authorization: {
+        url: `${(process.env.AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_AIDBOX_BASE_URL || '').replace(/\/$/, '')}/auth/authorize`,
+        // Aidbox may include `id_token` when `openid` is requested.
+        // NextAuth treats this provider as OAuth (not OIDC), so we must avoid `openid` here.
+        params: { response_type: 'code', scope: 'profile email' },
+      },
+      token: {
+        url: `${(process.env.AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_AIDBOX_BASE_URL || '').replace(/\/$/, '')}/auth/token`,
+      },
+      userinfo: {
+        async request({ tokens }: any) {
+          const t = tokens as AidboxTokenResponse
+          if (t.userinfo && (t.userinfo.id || t.userinfo.email)) {
+            return t.userinfo
+          }
+
+          const accessToken = (t as any).access_token as string | undefined
+          if (accessToken) {
+            const payload = decodeJwtPayload(accessToken)
+            const sub = payload?.sub as string | undefined
+            if (sub) {
+              const baseUrl = process.env.AIDBOX_BASE_URL || process.env.NEXT_PUBLIC_AIDBOX_BASE_URL
+              if (baseUrl) {
+                const res = await fetch(`${baseUrl.replace(/\/$/, '')}/User/${encodeURIComponent(sub)}`, {
+                  headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                })
+                if (res.ok) {
+                  return res.json()
+                }
+              }
+              return { id: sub }
+            }
+          }
+
+          return { id: 'unknown' }
+        },
+      },
+      profile(profile: any, tokens: any) {
+        const tokenResp = tokens as AidboxTokenResponse
+        const userinfo = (tokenResp.userinfo || profile) as any
+        const id = userinfo?.id || decodeJwtPayload(tokenResp.access_token || '')?.sub || 'unknown'
+        const email = userinfo?.email
+        const name = userinfo?.name || email || 'Aidbox User'
+
+        return {
+          id: String(id),
+          name: String(name),
+          email: email ? String(email) : undefined,
+        }
+      },
+    } as any,
     CredentialsProvider({
       name: 'Demo Login',
       credentials: {
@@ -75,10 +191,69 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.role = (user as unknown as { role: string }).role
         token.id = user.id
+      }
+
+      if (account?.provider === 'aidbox') {
+        const a = account as any as AidboxTokenResponse & { access_token?: string; refresh_token?: string; expires_in?: number }
+        if (a.access_token) {
+          ;(token as any).aidboxAccessToken = a.access_token
+          ;(token as any).aidboxAccessTokenExpires = Date.now() + (a.expires_in ? a.expires_in * 1000 : 3600 * 1000)
+        }
+        if (a.refresh_token) {
+          ;(token as any).aidboxRefreshToken = a.refresh_token
+        }
+        const userinfo = a.userinfo as any
+        if (userinfo?.id) {
+          ;(token as any).aidboxUserId = userinfo.id
+        } else if (a.access_token) {
+          const payload = decodeJwtPayload(a.access_token)
+          if (payload?.sub) {
+            ;(token as any).aidboxUserId = payload.sub
+          }
+        }
+
+        const configuredAdminEmails = (process.env.EMR_ADMIN_EMAILS || process.env.EMR_ADMIN_EMAIL || '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean)
+        const email = ((user as any)?.email || userinfo?.email) as string | undefined
+        const isAdminEmail = !!email && configuredAdminEmails.includes(email.toLowerCase())
+
+        if (!token.role) {
+          token.role = isAdminEmail ? 'admin' : 'user'
+        }
+      }
+
+      if ((token as any).aidboxAccessToken) {
+        ;(token as any).fhirAccessToken = (token as any).aidboxAccessToken
+      }
+      if ((token as any).aidboxUserId) {
+        ;(token as any).fhirUserId = (token as any).aidboxUserId
+      }
+
+      const expiresAt = (token as any).aidboxAccessTokenExpires as number | undefined
+      const refreshToken = (token as any).aidboxRefreshToken as string | undefined
+      const accessToken = (token as any).aidboxAccessToken as string | undefined
+
+      if (accessToken && expiresAt && refreshToken && Date.now() >= expiresAt - 30_000) {
+        try {
+          const refreshed = await refreshAidboxAccessToken(refreshToken)
+          if (refreshed.access_token) {
+            ;(token as any).aidboxAccessToken = refreshed.access_token
+            ;(token as any).aidboxAccessTokenExpires = Date.now() + (refreshed.expires_in ? refreshed.expires_in * 1000 : 3600 * 1000)
+          }
+          if (refreshed.refresh_token) {
+            ;(token as any).aidboxRefreshToken = refreshed.refresh_token
+          }
+        } catch {
+          ;(token as any).aidboxAccessToken = undefined
+          ;(token as any).aidboxAccessTokenExpires = undefined
+          ;(token as any).aidboxRefreshToken = undefined
+        }
       }
       return token
     },
@@ -86,7 +261,11 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as unknown as { role: string }).role = token.role as string
         (session.user as unknown as { id: string }).id = token.id as string
+        ;(session.user as any).aidboxUserId = (token as any).aidboxUserId
+        ;(session.user as any).fhirUserId = (token as any).fhirUserId
       }
+      ;(session as any).aidboxAccessToken = (token as any).aidboxAccessToken
+      ;(session as any).fhirAccessToken = (token as any).fhirAccessToken
       return session
     },
   },

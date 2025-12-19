@@ -28,6 +28,8 @@ import {
   Users,
   CreditCard,
   AlertCircle,
+  LayoutDashboard,
+  Home,
 } from 'lucide-react'
 import { RealTimeVitals } from '@/components/clinical/RealTimeVitals'
 import { ClinicalNotes } from '@/components/clinical/ClinicalNotes'
@@ -58,6 +60,7 @@ import { ProceduresPanel } from '@/components/chart/ProceduresPanel'
 import { TasksPanel } from '@/components/chart/TasksPanel'
 import { CarePlanPanel } from '@/components/chart/CarePlanPanel'
 import { CoveragePanel } from '@/components/chart/CoveragePanel'
+import { PatientStickyNote } from '@/components/patients/PatientStickyNote'
 import Link from 'next/link'
 
 interface FHIRPatientChartProps {
@@ -72,6 +75,34 @@ const formatCondition = (condition: any) => ({
   verificationStatus: condition.verificationStatus?.coding?.[0]?.code || condition.verificationStatus?.text || 'confirmed',
   onset: condition.onsetDateTime || condition.onsetAge?.text || 'Unknown',
 })
+
+// Filter out social determinant "findings" that aren't real medical conditions
+const isMedicalCondition = (condition: any): boolean => {
+  const name = condition.code?.text || condition.code?.coding?.[0]?.display || ''
+  const excludePatterns = [
+    '(finding)',
+    '(situation)',
+    '(social concept)',
+    'employment',
+    'education',
+    'housing',
+    'stress',
+    'lack of',
+    'Received higher',
+    'Social isolation',
+    'Reports of violence',
+    'Victim of intimate partner abuse',
+    'Has a criminal record',
+    'Misuses drugs',
+    'Unhealthy alcohol drinking behavior',
+    'Limited social contact',
+    'Not in labor force',
+    'Part-time employment',
+    'Full-time employment',
+  ]
+  const lowerName = name.toLowerCase()
+  return !excludePatterns.some(pattern => lowerName.includes(pattern.toLowerCase()))
+}
 
 const formatVital = (vital: any) => {
   const code = vital.code?.text || vital.code?.coding?.[0]?.display || 'Unknown'
@@ -89,25 +120,35 @@ const formatVital = (vital: any) => {
 
 const formatLab = (lab: any) => {
   const name = lab.code?.text || lab.code?.coding?.[0]?.display || 'Unknown test'
-  const value = lab.valueQuantity?.value || 'No value'
+  const value = lab.valueQuantity?.value
   const unit = lab.valueQuantity?.unit || ''
   const date = lab.effectiveDateTime || 'Unknown'
   
-  // Determine if value is abnormal
+  // Determine if value is abnormal from FHIR interpretation
   let flag = ''
   if (lab.interpretation?.length > 0) {
-    const interpretation = lab.interpretation[0]
-    if (interpretation.coding?.[0]?.code === 'H') flag = 'H'
-    else if (interpretation.coding?.[0]?.code === 'L') flag = 'L'
-    else if (interpretation.coding?.[0]?.code === 'HH') flag = 'HH'
-    else if (interpretation.coding?.[0]?.code === 'LL') flag = 'LL'
+    const interpCode = lab.interpretation[0]?.coding?.[0]?.code?.toUpperCase()
+    if (interpCode === 'H' || interpCode === 'HH' || interpCode === 'HIGH') flag = 'H'
+    else if (interpCode === 'L' || interpCode === 'LL' || interpCode === 'LOW') flag = 'L'
+    else if (interpCode === 'A' || interpCode === 'AA') flag = 'A' // Abnormal
+  }
+  
+  // Fallback: check reference ranges if no interpretation
+  if (!flag && value && lab.referenceRange?.length > 0) {
+    const range = lab.referenceRange[0]
+    const low = range.low?.value
+    const high = range.high?.value
+    if (low !== undefined && value < low) flag = 'L'
+    else if (high !== undefined && value > high) flag = 'H'
   }
   
   return {
     name,
-    value: `${value} ${unit}`.trim(),
+    value: value !== undefined ? `${Math.round(value * 100) / 100} ${unit}`.trim() : 'Pending',
     flag,
     date: new Date(date).toLocaleDateString(),
+    rawValue: value,
+    unit,
   }
 }
 
@@ -166,8 +207,8 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
   const { data: coverage = [], isLoading: coverageLoading } = usePatientCoverage(patientId)
   const { data: allergies = [], isLoading: allergiesLoading } = usePatientAllergies(patientId)
 
-  // Format data for display
-  const formattedConditions = conditions.map(formatCondition)
+  // Format data for display - filter out social determinant findings
+  const formattedConditions = conditions.filter(isMedicalCondition).map(formatCondition)
   const formattedVitals = vitals.slice(0, 6).map(formatVital)
   const formattedLabs = labs.slice(0, 10).map(formatLab)
   const formattedMedications = [
@@ -211,9 +252,48 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
   }
 
   return (
-    <div className="flex min-h-screen">
-      {/* Left Sidebar - Patient Demographics */}
-      <div className="w-72 flex-shrink-0 border-r bg-muted/30 p-4 space-y-4">
+    <div className="flex flex-col min-h-screen">
+      <PatientStickyNote patientId={patientId} />
+      {/* Sticky Top Navigation Bar - Mobile Responsive */}
+      <div className="sticky top-0 z-50 bg-slate-900 text-white px-2 sm:px-4 py-2 shadow-md">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Link href="/patients" className="flex items-center gap-1 sm:gap-2 hover:bg-slate-800 px-2 sm:px-3 py-1.5 rounded-md transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+              <span className="text-sm font-medium hidden sm:inline">Back</span>
+            </Link>
+            <div className="h-6 w-px bg-slate-700 hidden sm:block" />
+            <div className="hidden md:flex items-center gap-1">
+              <Link href="/" className="flex items-center gap-1.5 hover:bg-slate-800 px-2 py-1.5 rounded-md transition-colors text-sm">
+                <LayoutDashboard className="h-4 w-4" />
+                <span className="hidden lg:inline">Dashboard</span>
+              </Link>
+              <Link href="/patients" className="flex items-center gap-1.5 hover:bg-slate-800 px-2 py-1.5 rounded-md transition-colors text-sm">
+                <Users className="h-4 w-4" />
+                <span className="hidden lg:inline">Patients</span>
+              </Link>
+              <Link href="/encounters" className="flex items-center gap-1.5 hover:bg-slate-800 px-2 py-1.5 rounded-md transition-colors text-sm">
+                <Stethoscope className="h-4 w-4" />
+                <span className="hidden lg:inline">Encounters</span>
+              </Link>
+              <Link href="/appointments" className="flex items-center gap-1.5 hover:bg-slate-800 px-2 py-1.5 rounded-md transition-colors text-sm">
+                <Calendar className="h-4 w-4" />
+                <span className="hidden lg:inline">Appointments</span>
+              </Link>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 sm:gap-2 text-sm">
+            <span className="font-semibold truncate max-w-[120px] sm:max-w-none">{patient.name}</span>
+            <Badge variant="secondary" className="bg-slate-700 text-slate-200 text-xs">
+              {patient.mrn}
+            </Badge>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row flex-1">
+      {/* Left Sidebar - Patient Demographics - Collapsible on mobile */}
+      <div className="lg:w-72 flex-shrink-0 border-b lg:border-b-0 lg:border-r bg-muted/30 p-3 lg:p-4 space-y-3 lg:space-y-4">
         {/* Patient Avatar & Name */}
         <div className="text-center">
           <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-3">
@@ -490,17 +570,17 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
           </CardContent>
         </Card>
 
-        {/* Main Tabs */}
+        {/* Main Tabs - Mobile Responsive */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-8">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="labs">Labs</TabsTrigger>
-          <TabsTrigger value="medications">Meds</TabsTrigger>
-          <TabsTrigger value="imaging">Imaging</TabsTrigger>
-          <TabsTrigger value="procedures">Procedures</TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
+        <TabsList className="flex flex-wrap h-auto gap-1 p-1 sm:grid sm:grid-cols-4 md:grid-cols-8">
+          <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+          <TabsTrigger value="labs" className="text-xs sm:text-sm">Labs</TabsTrigger>
+          <TabsTrigger value="medications" className="text-xs sm:text-sm">Meds</TabsTrigger>
+          <TabsTrigger value="imaging" className="text-xs sm:text-sm">Imaging</TabsTrigger>
+          <TabsTrigger value="procedures" className="text-xs sm:text-sm">Procedures</TabsTrigger>
+          <TabsTrigger value="notes" className="text-xs sm:text-sm">Notes</TabsTrigger>
+          <TabsTrigger value="orders" className="text-xs sm:text-sm">Orders</TabsTrigger>
+          <TabsTrigger value="tasks" className="text-xs sm:text-sm">Tasks</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -622,7 +702,7 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
             </div>
             <div className="space-y-4">
               <SmartNotesPanel patientId={patientId} patientName={patient.name} />
-              <DiagnosticAssistPanel patientId={patientId} />
+              <DiagnosticAssistPanel patientId={patientId} patientName={patient.name} />
             </div>
           </div>
         </TabsContent>
@@ -661,6 +741,7 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
           <TasksPanel patientId={patientId} />
         </TabsContent>
       </Tabs>
+      </div>
       </div>
     </div>
   )

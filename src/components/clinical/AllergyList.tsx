@@ -41,6 +41,7 @@ import {
   Bug,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { toastSuccess, toastError } from '@/hooks/useToast'
 
 export interface Allergy {
   id: string
@@ -154,17 +155,20 @@ export function AllergyList({
     try {
       if (editingAllergy && onUpdateAllergy) {
         await onUpdateAllergy(editingAllergy.id, formData)
+        toastSuccess('Allergy Updated', formData.allergen)
       } else if (onAddAllergy) {
         await onAddAllergy({
           ...formData,
           verifiedDate: new Date().toISOString(),
           verifiedBy: 'Current User',
         })
+        toastSuccess('Allergy Added', formData.allergen)
       }
       setIsAddDialogOpen(false)
       resetForm()
     } catch (error) {
       console.error('Failed to save allergy:', error)
+      toastError('Failed to Save', 'Could not save allergy')
     } finally {
       setIsSubmitting(false)
     }
@@ -186,7 +190,12 @@ export function AllergyList({
 
   const handleDelete = async (id: string) => {
     if (onDeleteAllergy && confirm('Are you sure you want to delete this allergy?')) {
-      await onDeleteAllergy(id)
+      try {
+        await onDeleteAllergy(id)
+        toastSuccess('Allergy Removed', 'Allergy has been deleted')
+      } catch (error) {
+        toastError('Failed to Delete', 'Could not delete allergy')
+      }
     }
   }
 

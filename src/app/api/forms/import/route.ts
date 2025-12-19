@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch, GALLERY_FORM_URLS } from '@/lib/aidbox'
+import { aidbox, GALLERY_FORM_URLS } from '@/lib/aidbox'
 
 // LOINC Questionnaire definitions - simplified versions for common clinical forms
 const LOINC_FORMS: Record<string, any> = {
@@ -278,15 +278,9 @@ export async function POST(request: NextRequest) {
     // Import LOINC forms
     for (const [url, form] of Object.entries(LOINC_FORMS)) {
       try {
-        const response = await aidboxFetch(`/Questionnaire/${form.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(form),
-        })
-        if (response.ok) {
-          results.imported.push(form.title)
-        } else {
-          results.failed.push({ id: form.id, error: await response.text() })
-        }
+        // Use Aidbox SDK
+        await aidbox.resource.update('Questionnaire', form.id, form as any)
+        results.imported.push(form.title)
       } catch (error: any) {
         results.failed.push({ id: form.id, error: error.message })
       }
@@ -295,15 +289,9 @@ export async function POST(request: NextRequest) {
     // Import custom clinical forms
     for (const form of CLINICAL_FORMS) {
       try {
-        const response = await aidboxFetch(`/Questionnaire/${form.id}`, {
-          method: 'PUT',
-          body: JSON.stringify(form),
-        })
-        if (response.ok) {
-          results.imported.push(form.title)
-        } else {
-          results.failed.push({ id: form.id, error: await response.text() })
-        }
+        // Use Aidbox SDK
+        await aidbox.resource.update('Questionnaire', form.id, form as any)
+        results.imported.push(form.title)
       } catch (error: any) {
         results.failed.push({ id: form.id, error: error.message })
       }

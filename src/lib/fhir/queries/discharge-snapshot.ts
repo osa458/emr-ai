@@ -211,9 +211,59 @@ function calculateClinicalStability(
         'Unknown'
     )
 
-  // Determine lab trending
-  const labsTrending: 'improving' | 'stable' | 'worsening' = 'stable'
+  // Determine lab trending by checking key labs
+  let labsTrending: 'improving' | 'stable' | 'worsening' = 'stable'
   const labDetails: string[] = []
+  
+  // Check creatinine trend (kidney function)
+  const creatinineValues = labs
+    .filter((l) => l.code?.coding?.some((c) => c.code === '2160-0'))
+    .slice(0, 3)
+    .map((l) => l.valueQuantity?.value || 0)
+  
+  if (creatinineValues.length >= 2) {
+    const crChange = creatinineValues[0] - creatinineValues[creatinineValues.length - 1]
+    if (crChange > 0.3) {
+      labDetails.push(`Creatinine improving: ${creatinineValues[creatinineValues.length - 1]} → ${creatinineValues[0]}`)
+    } else if (crChange < -0.3) {
+      labDetails.push(`Creatinine worsening: ${creatinineValues[creatinineValues.length - 1]} → ${creatinineValues[0]}`)
+      labsTrending = 'worsening'
+    }
+  }
+  
+  // Check WBC trend (infection)
+  const wbcValues = labs
+    .filter((l) => l.code?.coding?.some((c) => c.code === '6690-2'))
+    .slice(0, 3)
+    .map((l) => l.valueQuantity?.value || 0)
+  
+  if (wbcValues.length >= 2) {
+    const wbcChange = wbcValues[0] - wbcValues[wbcValues.length - 1]
+    if (wbcValues[0] > 12 && wbcChange < 0) {
+      labDetails.push(`WBC decreasing but still elevated: ${wbcValues[0]}`)
+    } else if (wbcValues[0] > 15) {
+      labDetails.push(`WBC significantly elevated: ${wbcValues[0]}`)
+      labsTrending = 'worsening'
+    }
+  }
+  
+  // Check hemoglobin (anemia)
+  const hgbValues = labs
+    .filter((l) => l.code?.coding?.some((c) => c.code === '718-7'))
+    .slice(0, 2)
+    .map((l) => l.valueQuantity?.value || 0)
+  
+  if (hgbValues.length > 0 && hgbValues[0] < 8) {
+    labDetails.push(`Hemoglobin critically low: ${hgbValues[0]} g/dL`)
+    vitalsStable = false
+  }
+  
+  if (labDetails.length === 0) {
+    labDetails.push('Labs stable, no significant trends')
+    labsTrending = 'stable'
+  } else if (labsTrending !== 'worsening') {
+    labsTrending = 'improving'
+  }
 
   if (vitalsStable && vitalsDetails.length === 0) {
     vitalsDetails.push('Vitals within normal limits')
@@ -249,8 +299,13 @@ function calculateWorkupCompleteness(
   }
 }
 
+// Labs where DECREASING is improving (e.g., creatinine, WBC, glucose)
+const LABS_DECREASING_IS_GOOD = ['2160-0', '6690-2', '2345-7', '1988-5', '1920-8', '2823-3']
+// Labs where INCREASING is improving (e.g., hemoglobin, platelets, albumin)
+const LABS_INCREASING_IS_GOOD = ['718-7', '777-3', '1751-7']
+
 function calculateLabTrends(labs: Observation[]): LabTrend[] {
-  // Group labs by type
+  // Group labs by LOINC code
   const labGroups: Record<string, Observation[]> = {}
 
   labs.forEach((lab) => {
@@ -283,16 +338,23 @@ function calculateLabTrends(labs: Observation[]): LabTrend[] {
 
     if (values.length < 2) return
 
-    // Simple trend calculation
+    // Calculate trend based on lab type
     const firstValue = values[0].value
     const lastValue = values[values.length - 1].value
     const change = lastValue - firstValue
-    const percentChange = (change / firstValue) * 100
+    const percentChange = firstValue !== 0 ? (change / firstValue) * 100 : 0
 
     let trend: 'improving' | 'stable' | 'worsening' = 'stable'
+    
     if (Math.abs(percentChange) > 10) {
-      // For most labs, decreasing is improving (creatinine, WBC, etc.)
-      trend = change < 0 ? 'improving' : 'worsening'
+      if (LABS_DECREASING_IS_GOOD.includes(code)) {
+        trend = change < 0 ? 'improving' : 'worsening'
+      } else if (LABS_INCREASING_IS_GOOD.includes(code)) {
+        trend = change > 0 ? 'improving' : 'worsening'
+      } else {
+        // Default: decreasing is improving
+        trend = change < 0 ? 'improving' : 'worsening'
+      }
     }
 
     trends.push({
@@ -302,6 +364,10 @@ function calculateLabTrends(labs: Observation[]): LabTrend[] {
       trend,
     })
   })
+
+  // Sort by importance (worsening first, then improving, then stable)
+  const trendOrder = { worsening: 0, improving: 1, stable: 2 }
+  trends.sort((a, b) => trendOrder[a.trend] - trendOrder[b.trend])
 
   return trends.slice(0, 10) // Return top 10 trending labs
 }

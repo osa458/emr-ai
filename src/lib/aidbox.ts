@@ -1,17 +1,32 @@
 /**
  * Aidbox FHIR Client
  * Handles connection and operations with Aidbox
+ * Now uses the official @aidbox/sdk-r4 SDK
  */
+
+import { Client } from '@aidbox/sdk-r4'
 
 const AIDBOX_BASE_URL = process.env.AIDBOX_BASE_URL || 'https://aoadhslfxc.edge.aidbox.app'
 const AIDBOX_CLIENT_ID = process.env.AIDBOX_CLIENT_ID || 'emr-api'
 const AIDBOX_CLIENT_SECRET = process.env.AIDBOX_CLIENT_SECRET || 'emr-secret-123'
+
+// Official Aidbox SDK Client
+export const aidbox = new Client(AIDBOX_BASE_URL, {
+  auth: {
+    method: 'basic',
+    credentials: {
+      username: AIDBOX_CLIENT_ID,
+      password: AIDBOX_CLIENT_SECRET,
+    },
+  },
+})
 
 function getAuthHeader(): string {
   const credentials = Buffer.from(`${AIDBOX_CLIENT_ID}:${AIDBOX_CLIENT_SECRET}`).toString('base64')
   return `Basic ${credentials}`
 }
 
+// Legacy fetch function (kept for backward compatibility)
 export async function aidboxFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const url = `${AIDBOX_BASE_URL}${path}`
   return fetch(url, {
@@ -22,6 +37,35 @@ export async function aidboxFetch(path: string, options: RequestInit = {}): Prom
       ...options.headers,
     },
   })
+}
+
+// SDK-based helper functions
+export async function getPatients(count: number = 100) {
+  return aidbox.resource.list('Patient').count(count)
+}
+
+export async function getPatient(id: string) {
+  return aidbox.resource.get('Patient', id)
+}
+
+export async function createPatient(data: Record<string, unknown>) {
+  return aidbox.resource.create('Patient', data as any)
+}
+
+export async function getEncountersByPatient(patientId: string) {
+  return aidbox.resource.list('Encounter').where('subject', `Patient/${patientId}`)
+}
+
+export async function getConditionsByPatient(patientId: string) {
+  return aidbox.resource.list('Condition').where('subject', `Patient/${patientId}`)
+}
+
+export async function getObservationsByPatient(patientId: string) {
+  return aidbox.resource.list('Observation').where('subject', `Patient/${patientId}`)
+}
+
+export async function getMedicationRequestsByPatient(patientId: string) {
+  return aidbox.resource.list('MedicationRequest').where('subject', `Patient/${patientId}`)
 }
 
 export async function getQuestionnaires(count: number = 500): Promise<any> {

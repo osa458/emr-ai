@@ -18,9 +18,11 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "seed": "tsx scripts/seed-aidbox.ts",
+    "aidbox:configure-oauth": "tsx scripts/configure-aidbox-oauth.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@aidbox/sdk-r4": "^1.0.15",
     "@beda.software/fhir-react": "^1.10.0",
     "@fullcalendar/core": "^6.1.19",
     "@fullcalendar/daygrid": "^6.1.19",
@@ -44,7 +46,7 @@
     "@radix-ui/react-separator": "^1.0.3",
     "@radix-ui/react-slot": "^1.0.2",
     "@radix-ui/react-tabs": "^1.0.4",
-    "@radix-ui/react-toast": "^1.1.5",
+    "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.0.7",
     "@tanstack/react-query": "^5.17.0",
     "class-variance-authority": "^0.7.0",

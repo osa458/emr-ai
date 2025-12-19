@@ -4,39 +4,27 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const patientId = searchParams.get('patient')
     const encounterId = searchParams.get('encounter')
-    const category = searchParams.get('category') // LAB, RAD, etc.
+    const category = searchParams.get('category')
     const status = searchParams.get('status')
     const code = searchParams.get('code')
-    const _count = searchParams.get('_count') || '100'
-    const _sort = searchParams.get('_sort') || '-date'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (patientId) params.set('patient', patientId)
-    if (encounterId) params.set('encounter', encounterId)
-    if (category) params.set('category', category)
-    if (status) params.set('status', status)
-    if (code) params.set('code', code)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('DiagnosticReport').count(_count)
+    if (patientId) query = query.where('subject', `Patient/${patientId}`)
+    if (encounterId) query = query.where('encounter', `Encounter/${encounterId}`)
+    if (category) query = query.where('category', category)
+    if (status) query = query.where('status', status)
+    if (code) query = query.where('code', code)
 
-    const response = await aidboxFetch(`/DiagnosticReport?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch diagnostic reports: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const reports = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || reports.length
 
@@ -58,26 +46,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const report = {
-      resourceType: 'DiagnosticReport',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('DiagnosticReport', {
       status: 'final',
       ...body,
-    }
+    } as any)
 
-    const response = await aidboxFetch('/DiagnosticReport', {
-      method: 'POST',
-      body: JSON.stringify(report),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create diagnostic report: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('DiagnosticReport create error:', error)

@@ -1,8 +1,8 @@
 # EMR AI - Implementation Progress Tracker
 
-**Last Updated:** December 12, 2024
+**Last Updated:** December 17, 2024
 
-## Overall Progress: ~95% Complete
+## Overall Progress: ~98% Complete
 
 ---
 
@@ -206,6 +206,30 @@
 9. ⏳ **Demo video** - Record walkthrough (manual task)
 10. ✅ **Rate limiting** - Token bucket algorithm with retry logic
 11. ✅ **More unit tests** - 57 tests (rate limiter, appointments API, FHIR helpers)
+
+### Recently Completed (December 17, 2024)
+12. ✅ **Complete demo flow** - Full walkthrough tested with login, patient lists, navigation
+13. ✅ **Aidbox SDK Integration** - Migrated to `@aidbox/sdk-r4` for cleaner FHIR operations
+14. ✅ **Aidbox credentials updated** - New client credentials configured and tested
+
+---
+
+## Aidbox SDK Integration
+
+The project now uses the official `@aidbox/sdk-r4` SDK for FHIR operations:
+
+```typescript
+import { aidbox, getPatients, getEncountersByPatient } from '@/lib/aidbox';
+
+// Get patients
+const patients = await getPatients(100);
+
+// Get encounters for a patient
+const encounters = await getEncountersByPatient('patient-id');
+
+// Direct SDK access
+const result = await aidbox.resource.list('Observation').where('subject', 'Patient/123');
+```
 
 ---
 

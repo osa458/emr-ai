@@ -40,6 +40,7 @@ import {
   Search,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { toastSuccess, toastError } from '@/hooks/useToast'
 
 export interface Problem {
   id: string
@@ -135,13 +136,16 @@ export function ProblemList({
     try {
       if (editingProblem && onUpdateProblem) {
         await onUpdateProblem(editingProblem.id, formData)
+        toastSuccess('Problem Updated', formData.description)
       } else if (onAddProblem) {
         await onAddProblem(formData)
+        toastSuccess('Problem Added', formData.description)
       }
       setIsAddDialogOpen(false)
       resetForm()
     } catch (error) {
       console.error('Failed to save problem:', error)
+      toastError('Failed to Save', 'Could not save problem')
     } finally {
       setIsSubmitting(false)
     }
@@ -164,7 +168,12 @@ export function ProblemList({
 
   const handleDelete = async (id: string) => {
     if (onDeleteProblem && confirm('Are you sure you want to delete this problem?')) {
-      await onDeleteProblem(id)
+      try {
+        await onDeleteProblem(id)
+        toastSuccess('Problem Removed', 'Problem has been deleted')
+      } catch (error) {
+        toastError('Failed to Delete', 'Could not delete problem')
+      }
     }
   }
 

@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   User,
   FileText,
@@ -17,34 +19,64 @@ import {
   CheckCircle,
   Bell,
   Plus,
+  AlertCircle,
 } from 'lucide-react'
+import {
+  usePatientLabs,
+  usePatientMedications,
+  usePatientConditions,
+  useAllAppointments,
+} from '@/hooks/useFHIRData'
+import type { Appointment, MedicationRequest, Observation } from '@medplum/fhirtypes'
 
-// Mock patient data for portal
-const patientData = {
-  name: 'John Smith',
-  dob: '1958-03-15',
-  mrn: 'MRN-12345',
-  email: 'john.smith@email.com',
-  phone: '(555) 123-4567',
+interface PatientPortalData {
+  name: string
+  dob: string
+  mrn: string
+  email?: string
+  phone?: string
 }
 
-const upcomingAppointments = [
-  { id: '1', date: '2024-12-20', time: '10:00 AM', provider: 'Dr. Sarah Johnson', type: 'Follow-up', location: 'Main Clinic' },
-  { id: '2', date: '2024-12-28', time: '2:30 PM', provider: 'Dr. Michael Chen', type: 'Cardiology', location: 'Heart Center' },
-]
+// Format medication for display
+function formatMedication(med: MedicationRequest) {
+  const name = med.medicationCodeableConcept?.text || 
+               med.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown'
+  const dosage = med.dosageInstruction?.[0]
+  const dose = dosage?.doseAndRate?.[0]?.doseQuantity?.value || ''
+  const unit = dosage?.doseAndRate?.[0]?.doseQuantity?.unit || ''
+  const freq = dosage?.timing?.code?.coding?.[0]?.display || 
+               dosage?.text || 'As directed'
+  return {
+    name: `${name} ${dose}${unit}`.trim(),
+    instructions: freq,
+    refillsRemaining: med.dispenseRequest?.numberOfRepeatsAllowed || 0,
+  }
+}
 
-const recentResults = [
-  { id: '1', name: 'Complete Blood Count', date: '2024-12-10', status: 'ready' },
-  { id: '2', name: 'Comprehensive Metabolic Panel', date: '2024-12-10', status: 'ready' },
-  { id: '3', name: 'Chest X-Ray', date: '2024-12-08', status: 'ready' },
-]
+// Format lab result for display
+function formatLabResult(obs: Observation) {
+  return {
+    id: obs.id || '',
+    name: obs.code?.text || obs.code?.coding?.[0]?.display || 'Unknown Test',
+    date: obs.effectiveDateTime ? new Date(obs.effectiveDateTime).toLocaleDateString() : 'Unknown',
+    status: 'ready' as const,
+  }
+}
 
-const medications = [
-  { name: 'Lisinopril 10mg', instructions: 'Take once daily', refillsRemaining: 3 },
-  { name: 'Metformin 500mg', instructions: 'Take twice daily with meals', refillsRemaining: 2 },
-  { name: 'Atorvastatin 20mg', instructions: 'Take at bedtime', refillsRemaining: 5 },
-]
+// Format appointment for display
+function formatAppointment(apt: Appointment) {
+  const startDate = apt.start ? new Date(apt.start) : null
+  return {
+    id: apt.id || '',
+    date: startDate?.toISOString().split('T')[0] || '',
+    time: startDate?.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) || '',
+    provider: apt.participant?.find(p => p.actor?.reference?.startsWith('Practitioner'))?.actor?.display || 'Provider',
+    type: apt.appointmentType?.text || apt.serviceType?.[0]?.text || 'Visit',
+    location: apt.participant?.find(p => p.actor?.reference?.startsWith('Location'))?.actor?.display || 'Clinic',
+  }
+}
 
+// Mock messages (would come from a messaging system)
 const messages = [
   { id: '1', from: 'Dr. Johnson', subject: 'Lab Results Review', date: '2024-12-11', unread: true },
   { id: '2', from: 'Nurse Smith', subject: 'Appointment Reminder', date: '2024-12-09', unread: false },
@@ -52,6 +84,34 @@ const messages = [
 
 export default function PatientPortalPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
+  const searchParams = useSearchParams()
+  const patientId = searchParams.get('patientId') || 'patient-1'  // Default demo patient
+  
+  // Fetch real FHIR data
+  const { data: labs = [], isLoading: labsLoading } = usePatientLabs(patientId)
+  const { inpatientMedications = [], homeMedications = [], isLoading: medsLoading } = usePatientMedications(patientId)
+  const { data: conditions = [], isLoading: conditionsLoading } = usePatientConditions(patientId)
+  const { data: appointmentsData = [], isLoading: appointmentsLoading } = useAllAppointments()
+
+  // Format data for display
+  const allMedications = [...inpatientMedications, ...homeMedications]
+  const medications = allMedications
+    .filter((m): m is MedicationRequest => 'intent' in m && m.status === 'active')
+    .map(formatMedication)
+  const recentResults = labs.slice(0, 10).map(formatLabResult)
+  const upcomingAppointments = appointmentsData
+    .filter((apt) => apt.status !== 'cancelled')
+    .slice(0, 5)
+    .map(formatAppointment)
+  
+  // Patient data (would come from auth context in production)
+  const patientData: PatientPortalData = {
+    name: 'Patient',  // Would be fetched from patient resource
+    dob: '',
+    mrn: patientId,
+  }
+
+  const isLoading = labsLoading || medsLoading || conditionsLoading || appointmentsLoading
 
   return (
     <div className="min-h-screen bg-gray-50">

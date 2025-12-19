@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,27 +14,17 @@ export async function GET(request: NextRequest) {
     const serviceType = searchParams.get('service-type')
     const specialty = searchParams.get('specialty')
     const active = searchParams.get('active')
-    const _count = searchParams.get('_count') || '50'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (actorId) params.set('actor', actorId)
-    if (date) params.set('date', date)
-    if (serviceType) params.set('service-type', serviceType)
-    if (specialty) params.set('specialty', specialty)
-    if (active) params.set('active', active)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Schedule').count(_count)
+    if (actorId) query = query.where('actor', actorId as any)
+    if (date) query = query.where('date', date as any)
+    if (serviceType) query = query.where('service-type', serviceType as any)
+    if (specialty) query = query.where('specialty', specialty as any)
+    if (active) query = query.where('active', active as any)
 
-    const response = await aidboxFetch(`/Schedule?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch schedules: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const schedules = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || schedules.length
 
@@ -56,26 +46,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const schedule = {
-      resourceType: 'Schedule',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('Schedule', {
       active: true,
       ...body,
-    }
-
-    const response = await aidboxFetch('/Schedule', {
-      method: 'POST',
-      body: JSON.stringify(schedule),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create schedule: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('Schedule create error:', error)

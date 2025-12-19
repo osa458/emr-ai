@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(
   request: NextRequest,
@@ -13,23 +13,8 @@ export async function GET(
   try {
     const { id } = params
 
-    const response = await aidboxFetch(`/Encounter/${id}`)
-    
-    if (!response.ok) {
-      if (response.status === 404) {
-        return NextResponse.json(
-          { success: false, error: 'Encounter not found' },
-          { status: 404 }
-        )
-      }
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch encounter: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const encounter = await response.json()
+    // Use Aidbox SDK
+    const encounter = await aidbox.resource.get('Encounter', id)
     return NextResponse.json({ success: true, data: encounter })
   } catch (error: any) {
     console.error('Encounter fetch error:', error)
@@ -48,26 +33,10 @@ export async function PUT(
     const { id } = params
     const body = await request.json()
 
-    const encounter = {
-      resourceType: 'Encounter',
-      id,
+    // Use Aidbox SDK
+    const updated = await aidbox.resource.update('Encounter', id, {
       ...body,
-    }
-
-    const response = await aidboxFetch(`/Encounter/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(encounter),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to update encounter: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const updated = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: updated })
   } catch (error: any) {
     console.error('Encounter update error:', error)
@@ -85,17 +54,8 @@ export async function DELETE(
   try {
     const { id } = params
 
-    const response = await aidboxFetch(`/Encounter/${id}`, {
-      method: 'DELETE',
-    })
-
-    if (!response.ok && response.status !== 204) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to delete encounter: ${error}` },
-        { status: response.status }
-      )
-    }
+    // Use Aidbox SDK
+    await aidbox.resource.delete('Encounter', id)
 
     return NextResponse.json({ success: true, message: 'Encounter deleted' })
   } catch (error: any) {

@@ -57,10 +57,8 @@ export function useActiveInpatients() {
   return useQuery({
     queryKey: ['inpatients', 'active'],
     queryFn: async () => {
-      const response = await fetch(
-        `${FHIR_BASE}/Encounter?status=in-progress&class=IMP&_include=Encounter:patient&_count=100`,
-        { headers: { 'Content-Type': 'application/fhir+json' } }
-      )
+      const path = `/Encounter?status=in-progress&class=IMP&_include=Encounter:patient&_count=100`
+      const response = await fetch(`/api/fhir/proxy?path=${encodeURIComponent(path)}`)
       if (!response.ok) {
         throw new Error(`Failed to fetch inpatients: ${response.status}`)
       }

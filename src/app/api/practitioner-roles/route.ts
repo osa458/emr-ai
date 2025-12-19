@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,28 +15,18 @@ export async function GET(request: NextRequest) {
     const role = searchParams.get('role')
     const specialty = searchParams.get('specialty')
     const active = searchParams.get('active')
-    const _count = searchParams.get('_count') || '100'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (practitionerId) params.set('practitioner', practitionerId)
-    if (organizationId) params.set('organization', organizationId)
-    if (locationId) params.set('location', locationId)
-    if (role) params.set('role', role)
-    if (specialty) params.set('specialty', specialty)
-    if (active) params.set('active', active)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('PractitionerRole').count(_count)
+    if (practitionerId) query = query.where('practitioner', practitionerId as any)
+    if (organizationId) query = query.where('organization', organizationId as any)
+    if (locationId) query = query.where('location', locationId as any)
+    if (role) query = query.where('role', role as any)
+    if (specialty) query = query.where('specialty', specialty as any)
+    if (active) query = query.where('active', active as any)
 
-    const response = await aidboxFetch(`/PractitionerRole?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch practitioner roles: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const roles = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || roles.length
 

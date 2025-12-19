@@ -332,6 +332,54 @@ enum MedicationTransactionType {
   ADJUST
 }
 
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ehrConnections EhrConnection[]
+}
+
+enum EhrVendor {
+  EPIC
+  ECLINICALWORKS
+}
+
+model EhrConnection {
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor       EhrVendor
+  issuer       String?
+  fhirBaseUrl  String
+  clientId     String
+  clientSecret String?
+  scopes       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  userTokens EhrUserToken[]
+}
+
+model EhrUserToken {
+  id              String       @id @default(cuid())
+  ehrConnectionId String
+  ehrConnection   EhrConnection @relation(fields: [ehrConnectionId], references: [id], onDelete: Cascade)
+  userId          String
+  accessToken     String
+  refreshToken    String?
+  expiresAt       DateTime?
+  tokenType       String?
+  scope           String?
+  idToken         String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([ehrConnectionId, userId])
+}
+
 // Audit log for compliance
 model AuditLog {
   id          String   @id @default(cuid())

@@ -339,10 +339,24 @@ function ImagingSection({ imaging }: { imaging: DiagnosticReport[] }) {
   )
 }
 
+// Filter out social determinant "findings" that aren't real medical conditions
+const isMedicalCondition = (condition: Condition): boolean => {
+  const name = condition.code?.text || condition.code?.coding?.[0]?.display || ''
+  const excludePatterns = [
+    '(finding)', '(situation)', '(social concept)', 'employment', 'education',
+    'housing', 'stress', 'lack of', 'Received higher', 'Social isolation',
+    'Reports of violence', 'Victim of intimate partner abuse', 'Has a criminal record',
+    'Misuses drugs', 'Unhealthy alcohol drinking behavior', 'Limited social contact',
+    'Not in labor force', 'Part-time employment', 'Full-time employment',
+  ]
+  const lowerName = name.toLowerCase()
+  return !excludePatterns.some(pattern => lowerName.includes(pattern.toLowerCase()))
+}
+
 // Assessment & Plan section
 function AssessmentPlanSection({ conditions }: { conditions: Condition[] }) {
   const activeConditions = conditions.filter(c => 
-    c.clinicalStatus?.coding?.[0]?.code === 'active'
+    c.clinicalStatus?.coding?.[0]?.code === 'active' && isMedicalCondition(c)
   ).slice(0, 8)
   
   if (activeConditions.length === 0) {

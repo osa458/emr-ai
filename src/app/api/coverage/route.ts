@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,27 +14,17 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const type = searchParams.get('type')
     const payorId = searchParams.get('payor')
-    const _count = searchParams.get('_count') || '50'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (patientId) params.set('patient', patientId)
-    if (beneficiaryId) params.set('beneficiary', beneficiaryId)
-    if (status) params.set('status', status)
-    if (type) params.set('type', type)
-    if (payorId) params.set('payor', payorId)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Coverage').count(_count)
+    if (patientId) query = query.where('patient', `Patient/${patientId}` as any)
+    if (beneficiaryId) query = query.where('beneficiary', beneficiaryId as any)
+    if (status) query = query.where('status', status as any)
+    if (type) query = query.where('type', type as any)
+    if (payorId) query = query.where('payor', payorId as any)
 
-    const response = await aidboxFetch(`/Coverage?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch coverage: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const coverage = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || coverage.length
 
@@ -56,26 +46,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const coverage = {
-      resourceType: 'Coverage',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('Coverage', {
       status: 'active',
       ...body,
-    }
-
-    const response = await aidboxFetch('/Coverage', {
-      method: 'POST',
-      body: JSON.stringify(coverage),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create coverage: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('Coverage create error:', error)

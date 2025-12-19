@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,29 +14,17 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const medication = searchParams.get('medication')
     const effectiveTime = searchParams.get('effective-time')
-    const _count = searchParams.get('_count') || '100'
-    const _sort = searchParams.get('_sort') || '-effective-time'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (patientId) params.set('patient', patientId)
-    if (encounterId) params.set('encounter', encounterId)
-    if (status) params.set('status', status)
-    if (medication) params.set('medication', medication)
-    if (effectiveTime) params.set('effective-time', effectiveTime)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('MedicationAdministration').count(_count)
+    if (patientId) query = query.where('subject', `Patient/${patientId}` as any)
+    if (encounterId) query = query.where('context', `Encounter/${encounterId}` as any)
+    if (status) query = query.where('status', status as any)
+    if (medication) query = query.where('medication', medication as any)
+    if (effectiveTime) query = query.where('effective-time', effectiveTime as any)
 
-    const response = await aidboxFetch(`/MedicationAdministration?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch medication administrations: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const administrations = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || administrations.length
 
@@ -58,26 +46,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const administration = {
-      resourceType: 'MedicationAdministration',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('MedicationAdministration', {
       status: 'completed',
       ...body,
-    }
-
-    const response = await aidboxFetch('/MedicationAdministration', {
-      method: 'POST',
-      body: JSON.stringify(administration),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create medication administration: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('MedicationAdministration create error:', error)

@@ -116,6 +116,11 @@ class DatabaseAuditProvider implements AuditProvider {
   name = 'database'
 
   async log(entry: AuditEntry): Promise<void> {
+    if (!process.env.DATABASE_URL) {
+      console.log('[AUDIT:FALLBACK]', JSON.stringify(entry))
+      return
+    }
+
     try {
       await prisma.auditLog.create({
         data: {
@@ -139,7 +144,8 @@ class DatabaseAuditProvider implements AuditProvider {
       })
     } catch (error) {
       // Fallback to console if database fails
-      console.error('[AUDIT:DB_ERROR]', error)
+      const message = (error as any)?.message || String(error)
+      console.error('[AUDIT:DB_ERROR]', message)
       console.log('[AUDIT:FALLBACK]', JSON.stringify(entry))
     }
   }
@@ -251,6 +257,11 @@ class SplunkAuditProvider implements AuditProvider {
 
 function createAuditProvider(): AuditProvider {
   const providerName = HIPAA_CONFIG.audit.provider
+
+  if ((providerName === 'database' || providerName === 'cloudwatch' || providerName === 'splunk') && !process.env.DATABASE_URL) {
+    console.warn('[AUDIT] DATABASE_URL is missing; falling back to console audit provider')
+    return new ConsoleAuditProvider()
+  }
 
   switch (providerName) {
     case 'console':

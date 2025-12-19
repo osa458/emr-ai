@@ -8,9 +8,61 @@ function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
     openaiClient = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
+      timeout: 60000, // 60 second timeout
+      maxRetries: 0, // We handle retries ourselves
     })
   }
   return openaiClient
+}
+
+// Retry configuration
+interface RetryConfig {
+  maxRetries: number
+  baseDelayMs: number
+  maxDelayMs: number
+  jitterFactor: number
+}
+
+const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 30000,
+  jitterFactor: 0.2,
+}
+
+// Calculate delay with exponential backoff and jitter
+function calculateBackoffDelay(attempt: number, config: RetryConfig): number {
+  const exponentialDelay = config.baseDelayMs * Math.pow(2, attempt - 1)
+  const cappedDelay = Math.min(exponentialDelay, config.maxDelayMs)
+  const jitter = cappedDelay * config.jitterFactor * (Math.random() - 0.5) * 2
+  return Math.floor(cappedDelay + jitter)
+}
+
+// Check if error is retryable
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof OpenAI.RateLimitError) return true
+  if (error instanceof OpenAI.APIConnectionError) return true
+  if (error instanceof OpenAI.InternalServerError) return true
+  if (error instanceof OpenAI.APIError) {
+    const status = error.status
+    // Retry on 429 (rate limit), 500, 502, 503, 504
+    return status === 429 || status === 500 || status === 502 || status === 503 || status === 504
+  }
+  // Retry on network errors
+  if (error instanceof Error && error.message.includes('ECONNRESET')) return true
+  if (error instanceof Error && error.message.includes('ETIMEDOUT')) return true
+  return false
+}
+
+// Get error message for logging
+function getErrorMessage(error: unknown): string {
+  if (error instanceof OpenAI.APIError) {
+    return `OpenAI API Error ${error.status}: ${error.message}`
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return String(error)
 }
 
 export interface LLMRequestOptions {
@@ -56,6 +108,7 @@ export async function llmRequest<T>(
     { role: 'user', content: userPrompt },
   ]
 
+  const retryConfig = DEFAULT_RETRY_CONFIG
   let lastError: Error | null = null
   
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -85,6 +138,11 @@ export async function llmRequest<T>(
         throw new Error(`LLM response parsing failed: ${parseError}`)
       }
 
+      // Log successful request
+      if (attempt > 1) {
+        console.log(`LLM request succeeded on attempt ${attempt}/${retries}`)
+      }
+
       return {
         data: parsed,
         usage: {
@@ -95,16 +153,23 @@ export async function llmRequest<T>(
       }
     } catch (error) {
       lastError = error as Error
+      const errorMsg = getErrorMessage(error)
       
-      // Check if it's a rate limit error from OpenAI
-      if (error instanceof OpenAI.RateLimitError) {
-        console.warn(`Rate limit hit, attempt ${attempt}/${retries}. Waiting...`)
-        // Exponential backoff: 1s, 2s, 4s
-        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000))
+      // Check if error is retryable
+      if (isRetryableError(error) && attempt < retries) {
+        const delay = calculateBackoffDelay(attempt, retryConfig)
+        console.warn(
+          `LLM request failed (attempt ${attempt}/${retries}): ${errorMsg}. ` +
+          `Retrying in ${delay}ms...`
+        )
+        await new Promise(resolve => setTimeout(resolve, delay))
         continue
       }
       
-      // For other errors, throw immediately
+      // Non-retryable error or exhausted retries
+      console.error(
+        `LLM request failed after ${attempt} attempt(s): ${errorMsg}`
+      )
       throw error
     }
   }

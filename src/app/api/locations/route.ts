@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,26 +13,16 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type')
     const organizationId = searchParams.get('organization')
     const status = searchParams.get('status')
-    const _count = searchParams.get('_count') || '100'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (name) params.set('name', name)
-    if (type) params.set('type', type)
-    if (organizationId) params.set('organization', organizationId)
-    if (status) params.set('status', status)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('Location').count(_count)
+    if (name) query = query.where('name', name as any)
+    if (type) query = query.where('type', type as any)
+    if (organizationId) query = query.where('organization', organizationId as any)
+    if (status) query = query.where('status', status as any)
 
-    const response = await aidboxFetch(`/Location?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch locations: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const locations = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || locations.length
 
@@ -54,26 +44,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const location = {
-      resourceType: 'Location',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('Location', {
       status: 'active',
       ...body,
-    }
-
-    const response = await aidboxFetch('/Location', {
-      method: 'POST',
-      body: JSON.stringify(location),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create location: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('Location create error:', error)

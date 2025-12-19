@@ -16,19 +16,69 @@ export function PatientStickyNote({ patientId }: PatientStickyNoteProps) {
   const [isEditing, setIsEditing] = useState(false)
 
   useEffect(() => {
-    const savedNote = getPatientNote(patientId)
-    setNote(savedNote)
+    let mounted = true
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/sticky-notes?patientId=${encodeURIComponent(patientId)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (mounted) setNote((data?.note as string) || '')
+          return
+        }
+      } catch {
+        // ignore
+      }
+
+      const savedNote = getPatientNote(patientId)
+      if (mounted) setNote(savedNote)
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
   }, [patientId])
 
   const handleSave = () => {
-    savePatientNote(patientId, note)
-    setIsEditing(false)
+    ;(async () => {
+      try {
+        const res = await fetch('/api/sticky-notes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ patientId, note }),
+        })
+        if (res.ok) {
+          setIsEditing(false)
+          return
+        }
+      } catch {
+        // ignore
+      }
+
+      savePatientNote(patientId, note)
+      setIsEditing(false)
+    })()
   }
 
   const handleCancel = () => {
-    const savedNote = getPatientNote(patientId)
-    setNote(savedNote)
-    setIsEditing(false)
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/sticky-notes?patientId=${encodeURIComponent(patientId)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setNote((data?.note as string) || '')
+          setIsEditing(false)
+          return
+        }
+      } catch {
+        // ignore
+      }
+
+      const savedNote = getPatientNote(patientId)
+      setNote(savedNote)
+      setIsEditing(false)
+    })()
   }
 
   if (!note && !isEditing) {

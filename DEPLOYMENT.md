@@ -25,6 +25,20 @@ OPENAI_API_KEY="sk-your-key"
 AIDBOX_BASE_URL="https://your-aidbox-host"
 AIDBOX_CLIENT_ID="your-client-id"
 AIDBOX_CLIENT_SECRET="your-client-secret"
+
+# Aidbox OAuth (Authorization Code)
+# Used for end-user login via Aidbox (/auth/authorize -> /auth/token)
+AIDBOX_OAUTH_CLIENT_ID="emr-webapp"
+AIDBOX_OAUTH_CLIENT_SECRET="generate-a-strong-secret"
+
+# Optional override. If omitted, the app assumes:
+#   ${NEXTAUTH_URL}/api/auth/callback/aidbox
+AIDBOX_OAUTH_REDIRECT_URI="https://your-domain.com/api/auth/callback/aidbox"
+
+# Optional: seed an initial Aidbox user (used by scripts/aidbox:configure-oauth)
+AIDBOX_SEED_USER_ID="exampleuser"
+AIDBOX_SEED_USER_EMAIL="test@example.com"
+AIDBOX_SEED_USER_PASSWORD="ChangeMe123!"
 ```
 
 ## Vercel Deployment

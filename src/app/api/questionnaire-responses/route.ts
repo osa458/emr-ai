@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,28 +13,16 @@ export async function GET(request: NextRequest) {
     const questionnaireId = searchParams.get('questionnaire')
     const encounterId = searchParams.get('encounter')
     const status = searchParams.get('status')
-    const _count = searchParams.get('_count') || '50'
-    const _sort = searchParams.get('_sort') || '-authored'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    params.set('_sort', _sort)
-    if (patientId) params.set('patient', patientId)
-    if (questionnaireId) params.set('questionnaire', questionnaireId)
-    if (encounterId) params.set('encounter', encounterId)
-    if (status) params.set('status', status)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('QuestionnaireResponse').count(_count)
+    if (patientId) query = query.where('subject', `Patient/${patientId}` as any)
+    if (questionnaireId) query = query.where('questionnaire', questionnaireId as any)
+    if (encounterId) query = query.where('encounter', `Encounter/${encounterId}` as any)
+    if (status) query = query.where('status', status as any)
 
-    const response = await aidboxFetch(`/QuestionnaireResponse?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch questionnaire responses: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const responses = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || responses.length
 
@@ -56,26 +44,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const qr = {
-      resourceType: 'QuestionnaireResponse',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('QuestionnaireResponse', {
       status: 'completed',
       ...body,
-    }
-
-    const response = await aidboxFetch('/QuestionnaireResponse', {
-      method: 'POST',
-      body: JSON.stringify(qr),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create questionnaire response: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('QuestionnaireResponse create error:', error)

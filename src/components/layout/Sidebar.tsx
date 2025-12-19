@@ -25,6 +25,7 @@ import {
   Briefcase,
   UserCog,
   Search,
+  Link2,
 } from 'lucide-react'
 
 const navigation = [
@@ -42,6 +43,7 @@ const navigation = [
   { name: 'Discharge Planning', href: '/discharge-planning', icon: ClipboardList },
   { name: 'Admit Patient', href: '/patients/admit', icon: UserPlus },
   { name: 'Form Builder', href: '/admin/forms', icon: FileEdit },
+  { name: 'EHR Integrations', href: '/admin/ehr', icon: Link2, adminOnly: true },
   { name: 'Medications Admin', href: '/admin/medications', icon: Pill, adminOnly: true },
   { name: 'Audit Log', href: '/admin/audit', icon: FileText, adminOnly: true },
 ]

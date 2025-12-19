@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '@/lib/db'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 const ImportByNdcSchema = z.object({
   ndcCode: z.string().min(1),
@@ -57,20 +57,10 @@ export async function POST(request: NextRequest) {
 
     const { ndcCode } = parsed.data
 
-    // Try an exact NDC match via code search
-    const ndcQuery = encodeURIComponent(
-      `http://hl7.org/fhir/sid/ndc|${ndcCode}`
-    )
-    const response = await aidboxFetch(
-      `/Medication?code=${ndcQuery}&_count=5`
-    )
-
-    if (!response.ok) {
-      const text = await response.text()
-      throw new Error(`Aidbox Medication query failed: ${response.status} ${text}`)
-    }
-
-    const bundle = await response.json()
+    // Use Aidbox SDK
+    const bundle = await aidbox.resource.list('Medication')
+      .where('code', `http://hl7.org/fhir/sid/ndc|${ndcCode}` as any)
+      .count(5)
     const entry = bundle.entry?.[0]
     const med = entry?.resource
 
@@ -123,6 +113,7 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
 
 
 

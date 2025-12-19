@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@aidbox/sdk-r4':
+    specifier: ^1.0.15
+    version: 1.0.15
   '@beda.software/fhir-react':
     specifier: ^1.10.0
     version: 1.10.0
@@ -75,7 +78,7 @@ dependencies:
     specifier: ^1.0.4
     version: 1.1.13(@types/react-dom@18.3.7)(@types/react@18.3.27)(react-dom@18.3.1)(react@18.3.1)
   '@radix-ui/react-toast':
-    specifier: ^1.1.5
+    specifier: ^1.2.15
     version: 1.2.15(@types/react-dom@18.3.7)(@types/react@18.3.27)(react-dom@18.3.1)(react@18.3.1)
   '@radix-ui/react-tooltip':
     specifier: ^1.0.7
@@ -202,6 +205,14 @@ packages:
   /@adobe/css-tools@4.4.4:
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
     dev: true
+
+  /@aidbox/sdk-r4@1.0.15:
+    resolution: {integrity: sha512-2/64s0TVVRVLel3TwOdHX34sgzX9V21dqMwOmc3QBdmJ8t9iQ0CnaCxGro90hOiT2u9kyR6lVcq+0GX2e+ZC6w==}
+    engines: {node: '>=18'}
+    dependencies:
+      '@juanelas/base64': 1.1.5
+      tslib: 2.8.1
+    dev: false
 
   /@alloc/quick-lru@5.2.0:
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -1666,6 +1677,10 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  /@juanelas/base64@1.1.5:
+    resolution: {integrity: sha512-mjAF27LzwfYobdwqnxZgeucbKT5wRRNvILg3h5OvCWK+3F7mw/A1tnjHnNiTYtLmTvT/bM1jA5AX7eQawDGs1w==}
+    dev: false
 
   /@lexical/clipboard@0.35.0:
     resolution: {integrity: sha512-ko7xSIIiayvDiqjNDX6fgH9RlcM6r9vrrvJYTcfGVBor5httx16lhIi0QJZ4+RNPvGtTjyFv4bwRmsixRRwImg==}

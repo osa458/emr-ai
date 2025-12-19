@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,26 +13,16 @@ export async function GET(request: NextRequest) {
     const clinicalStatus = searchParams.get('clinical-status')
     const category = searchParams.get('category')
     const criticality = searchParams.get('criticality')
-    const _count = searchParams.get('_count') || '100'
+    const _count = parseInt(searchParams.get('_count') || '100')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (patientId) params.set('patient', patientId)
-    if (clinicalStatus) params.set('clinical-status', clinicalStatus)
-    if (category) params.set('category', category)
-    if (criticality) params.set('criticality', criticality)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('AllergyIntolerance').count(_count)
+    if (patientId) query = query.where('patient', `Patient/${patientId}` as any)
+    if (clinicalStatus) query = query.where('clinical-status', clinicalStatus as any)
+    if (category) query = query.where('category', category as any)
+    if (criticality) query = query.where('criticality', criticality as any)
 
-    const response = await aidboxFetch(`/AllergyIntolerance?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch allergies: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const allergies = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || allergies.length
 
@@ -54,8 +44,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const allergy = {
-      resourceType: 'AllergyIntolerance',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('AllergyIntolerance', {
       clinicalStatus: {
         coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: 'active' }]
       },
@@ -63,22 +53,8 @@ export async function POST(request: NextRequest) {
         coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: 'confirmed' }]
       },
       ...body,
-    }
+    } as any)
 
-    const response = await aidboxFetch('/AllergyIntolerance', {
-      method: 'POST',
-      body: JSON.stringify(allergy),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create allergy: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('AllergyIntolerance create error:', error)

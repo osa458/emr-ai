@@ -42,6 +42,8 @@ interface ClinicalSummary {
   medications: string[]
   recommendations: string[]
   clinicalAlerts: string[]
+  clinicalInsights: string[]
+  riskFactors: string[]
   isAIGenerated?: boolean
 }
 
@@ -50,6 +52,20 @@ const formatConditionName = (condition: Condition): string => {
   return condition.code?.text || 
          condition.code?.coding?.[0]?.display || 
          'Unknown condition'
+}
+
+// Filter out social determinant "findings" that aren't real medical conditions
+const isMedicalCondition = (condition: Condition): boolean => {
+  const name = condition.code?.text || condition.code?.coding?.[0]?.display || ''
+  const excludePatterns = [
+    '(finding)', '(situation)', '(social concept)', 'employment', 'education',
+    'housing', 'stress', 'lack of', 'Received higher', 'Social isolation',
+    'Reports of violence', 'Victim of intimate partner abuse', 'Has a criminal record',
+    'Misuses drugs', 'Unhealthy alcohol drinking behavior', 'Limited social contact',
+    'Not in labor force', 'Part-time employment', 'Full-time employment',
+  ]
+  const lowerName = name.toLowerCase()
+  return !excludePatterns.some(pattern => lowerName.includes(pattern.toLowerCase()))
 }
 
 // Helper to format observation
@@ -102,6 +118,178 @@ const formatMedication = (med: MedicationRequest): string => {
   return dose ? `${name} ${dose}${unit} ${freq}`.trim() : name
 }
 
+// Clinical decision support - correlate conditions with labs
+function generateClinicalInsights(
+  conditions: Condition[],
+  labs: Observation[],
+  vitals: Observation[],
+  medications: MedicationRequest[]
+): { insights: string[]; risks: string[]; alerts: string[]; recommendations: string[] } {
+  const insights: string[] = []
+  const risks: string[] = []
+  const alerts: string[] = []
+  const recommendations: string[] = []
+  
+  const problemNames = conditions
+    .filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active')
+    .map(c => (c.code?.text || c.code?.coding?.[0]?.display || '').toLowerCase())
+  
+  const medNames = medications
+    .filter(m => m.status === 'active')
+    .map(m => (m.medicationCodeableConcept?.text || m.medicationCodeableConcept?.coding?.[0]?.display || '').toLowerCase())
+  
+  // Helper to find lab by LOINC or name
+  const findLab = (codes: string[], names: string[]): Observation | undefined => {
+    return labs.find(l => {
+      const code = l.code?.coding?.[0]?.code || ''
+      const name = (l.code?.text || l.code?.coding?.[0]?.display || '').toLowerCase()
+      return codes.includes(code) || names.some(n => name.includes(n))
+    })
+  }
+  
+  const findVital = (code: string): number | undefined => {
+    const v = vitals.find(v => v.code?.coding?.[0]?.code === code)
+    return v?.valueQuantity?.value
+  }
+
+  // === DIABETES MANAGEMENT ===
+  if (problemNames.some(p => p.includes('diabetes'))) {
+    const hba1c = findLab(['4548-4', '17856-6'], ['a1c', 'hemoglobin a1c', 'glycated'])
+    const glucose = findLab(['2345-7', '2339-0'], ['glucose'])
+    const creatinine = findLab(['2160-0'], ['creatinine'])
+    
+    if (hba1c?.valueQuantity?.value) {
+      const val = hba1c.valueQuantity.value
+      if (val > 9) {
+        alerts.push(`HbA1c critically elevated at ${val}% - intensify glycemic management`)
+        recommendations.push('Consider endocrinology referral for uncontrolled diabetes')
+      } else if (val > 7) {
+        insights.push(`HbA1c ${val}% above ADA target of <7% for most adults`)
+        recommendations.push('Optimize diabetes regimen - consider adding/adjusting therapy')
+      } else {
+        insights.push(`HbA1c ${val}% at goal - continue current diabetes management`)
+      }
+    }
+    
+    if (glucose?.valueQuantity?.value && glucose.valueQuantity.value > 200) {
+      alerts.push(`Hyperglycemia: glucose ${glucose.valueQuantity.value} mg/dL`)
+    }
+    
+    // Check for diabetic nephropathy risk
+    if (creatinine?.valueQuantity?.value && creatinine.valueQuantity.value > 1.5) {
+      risks.push('Elevated creatinine in diabetic patient - monitor for nephropathy')
+      recommendations.push('Consider ACE-I/ARB for renal protection if not contraindicated')
+    }
+    
+    recommendations.push('Ensure annual diabetic retinal exam and podiatry evaluation')
+  }
+
+  // === CARDIOVASCULAR ===
+  if (problemNames.some(p => p.includes('hypertension') || p.includes('heart') || p.includes('cardiac'))) {
+    const sbp = findVital('8480-6')
+    const dbp = findVital('8462-4')
+    const bnp = findLab(['33762-6', '42637-9'], ['bnp', 'natriuretic'])
+    const troponin = findLab(['6598-7', '10839-9'], ['troponin'])
+    
+    if (sbp && dbp) {
+      if (sbp >= 180 || dbp >= 120) {
+        alerts.push(`Hypertensive urgency: BP ${sbp}/${dbp} mmHg - immediate intervention needed`)
+      } else if (sbp >= 140 || dbp >= 90) {
+        insights.push(`Blood pressure ${sbp}/${dbp} mmHg above target - optimize antihypertensive therapy`)
+      }
+    }
+    
+    if (bnp?.valueQuantity?.value && bnp.valueQuantity.value > 100) {
+      const val = bnp.valueQuantity.value
+      if (val > 500) {
+        alerts.push(`BNP significantly elevated at ${val} pg/mL - evaluate for acute heart failure`)
+      } else {
+        insights.push(`BNP ${val} pg/mL - monitor volume status and cardiac function`)
+      }
+    }
+    
+    if (troponin?.valueQuantity?.value && troponin.valueQuantity.value > 0.04) {
+      alerts.push(`Elevated troponin ${troponin.valueQuantity.value} - rule out ACS`)
+    }
+  }
+
+  // === RENAL FUNCTION ===
+  const creatinine = findLab(['2160-0'], ['creatinine'])
+  const bun = findLab(['3094-0'], ['bun', 'urea nitrogen'])
+  const potassium = findLab(['2823-3'], ['potassium'])
+  
+  if (creatinine?.valueQuantity?.value) {
+    const cr = creatinine.valueQuantity.value
+    if (cr > 4.0) {
+      alerts.push(`Severe renal impairment: Cr ${cr} mg/dL - nephrology consultation recommended`)
+    } else if (cr > 2.0) {
+      risks.push(`Moderate renal impairment: Cr ${cr} mg/dL`)
+      recommendations.push('Review and adjust renally-dosed medications')
+    }
+  }
+  
+  if (potassium?.valueQuantity?.value) {
+    const k = potassium.valueQuantity.value
+    if (k > 6.0) alerts.push(`Critical hyperkalemia: K ${k} mEq/L - cardiac monitoring required`)
+    else if (k > 5.5) alerts.push(`Hyperkalemia: K ${k} mEq/L - monitor and consider treatment`)
+    else if (k < 3.0) alerts.push(`Critical hypokalemia: K ${k} mEq/L - replace urgently`)
+    else if (k < 3.5) insights.push(`Mild hypokalemia: K ${k} mEq/L - oral replacement indicated`)
+  }
+
+  // === HEMATOLOGY ===
+  const hgb = findLab(['718-7'], ['hemoglobin'])
+  const wbc = findLab(['6690-2'], ['wbc', 'leukocytes'])
+  const plt = findLab(['777-3', '26515-7'], ['platelet'])
+  
+  if (hgb?.valueQuantity?.value) {
+    const h = hgb.valueQuantity.value
+    if (h < 7) alerts.push(`Severe anemia: Hgb ${h} g/dL - consider transfusion`)
+    else if (h < 10) insights.push(`Anemia: Hgb ${h} g/dL - evaluate etiology`)
+  }
+  
+  if (wbc?.valueQuantity?.value) {
+    const w = wbc.valueQuantity.value
+    if (w > 20) alerts.push(`Leukocytosis: WBC ${w} - evaluate for infection/malignancy`)
+    else if (w < 2) alerts.push(`Severe leukopenia: WBC ${w} - infection precautions`)
+  }
+
+  // === DRUG-LAB INTERACTIONS ===
+  if (medNames.some(m => m.includes('warfarin') || m.includes('coumadin'))) {
+    const inr = findLab(['5902-2', '6301-6'], ['inr'])
+    if (inr?.valueQuantity?.value) {
+      const val = inr.valueQuantity.value
+      if (val > 4) alerts.push(`INR ${val} supratherapeutic - bleeding risk, hold warfarin`)
+      else if (val < 2) insights.push(`INR ${val} subtherapeutic - evaluate compliance/interactions`)
+    }
+  }
+  
+  if (medNames.some(m => m.includes('metformin'))) {
+    if (creatinine?.valueQuantity?.value && creatinine.valueQuantity.value > 1.5) {
+      alerts.push('Metformin with elevated creatinine - assess for lactic acidosis risk')
+    }
+  }
+  
+  if (medNames.some(m => m.includes('digoxin'))) {
+    const dig = findLab(['10535-3'], ['digoxin'])
+    if (dig?.valueQuantity?.value && dig.valueQuantity.value > 2.0) {
+      alerts.push(`Digoxin level ${dig.valueQuantity.value} ng/mL - toxicity risk`)
+    }
+    if (potassium?.valueQuantity?.value && potassium.valueQuantity.value < 3.5) {
+      alerts.push('Hypokalemia with digoxin therapy increases toxicity risk')
+    }
+  }
+
+  // Default if nothing found
+  if (insights.length === 0 && alerts.length === 0) {
+    insights.push('No significant lab-condition correlations identified')
+  }
+  if (recommendations.length === 0) {
+    recommendations.push('Continue current management and routine monitoring')
+  }
+
+  return { insights, risks, alerts, recommendations }
+}
+
 // Generate clinical summary from FHIR data
 function generateClinicalSummary(
   conditions: Condition[],
@@ -109,7 +297,8 @@ function generateClinicalSummary(
   vitals: Observation[],
   medications: MedicationRequest[]
 ): ClinicalSummary {
-  const activeProblems = conditions
+  const medicalConditions = conditions.filter(isMedicalCondition)
+  const activeProblems = medicalConditions
     .filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active')
     .map(formatConditionName)
     .slice(0, 8)
@@ -126,16 +315,15 @@ function generateClinicalSummary(
     .slice(0, 6)
     .map(formatVital)
 
-  // Get abnormal labs
+  // Get abnormal labs first, then recent
   const abnormalLabs = labs
     .filter(l => {
-      const interp = l.interpretation?.[0]?.coding?.[0]?.code
-      return interp === 'H' || interp === 'L' || interp === 'HH' || interp === 'LL'
+      const interp = l.interpretation?.[0]?.coding?.[0]?.code?.toUpperCase()
+      return interp === 'H' || interp === 'L' || interp === 'HH' || interp === 'LL' || interp === 'HIGH' || interp === 'LOW'
     })
     .slice(0, 6)
     .map(formatObservation)
 
-  // Get recent normal labs if not enough abnormal
   const recentLabs = abnormalLabs.length >= 3 
     ? abnormalLabs 
     : [...abnormalLabs, ...labs.slice(0, 6 - abnormalLabs.length).map(formatObservation)]
@@ -145,47 +333,10 @@ function generateClinicalSummary(
     .map(formatMedication)
     .slice(0, 10)
 
-  // Generate recommendations based on conditions and labs
-  const recommendations: string[] = []
-  const clinicalAlerts: string[] = []
+  // Generate clinical decision support
+  const cds = generateClinicalInsights(conditions, labs, vitals, medications)
 
-  // Check for common clinical scenarios
-  if (activeProblems.some(p => p.toLowerCase().includes('diabetes'))) {
-    const hba1c = labs.find(l => l.code?.coding?.[0]?.code === '4548-4')
-    if (hba1c && hba1c.valueQuantity?.value && hba1c.valueQuantity.value > 7) {
-      recommendations.push('Consider intensifying diabetes management - HbA1c above target')
-    }
-    recommendations.push('Ensure annual diabetic eye exam and foot exam are current')
-  }
-
-  if (activeProblems.some(p => p.toLowerCase().includes('hypertension'))) {
-    const systolic = vitals.find(v => v.code?.coding?.[0]?.code === '8480-6')
-    if (systolic && systolic.valueQuantity?.value && systolic.valueQuantity.value > 140) {
-      clinicalAlerts.push('Blood pressure above target - consider medication adjustment')
-    }
-    recommendations.push('Continue monitoring blood pressure and sodium restriction')
-  }
-
-  // Check for critical lab values
-  const potassium = labs.find(l => l.code?.coding?.[0]?.code === '2823-3')
-  if (potassium?.valueQuantity?.value) {
-    const k = potassium.valueQuantity.value
-    if (k > 5.5) clinicalAlerts.push(`Critical: Potassium ${k} mEq/L - risk of arrhythmia`)
-    if (k < 3.0) clinicalAlerts.push(`Critical: Potassium ${k} mEq/L - risk of arrhythmia`)
-  }
-
-  const creatinine = labs.find(l => l.code?.coding?.[0]?.code === '2160-0')
-  if (creatinine?.valueQuantity?.value && creatinine.valueQuantity.value > 2.0) {
-    clinicalAlerts.push('Elevated creatinine - review nephrotoxic medications')
-  }
-
-  // General recommendations
-  if (recommendations.length === 0) {
-    recommendations.push('Continue current management plan')
-    recommendations.push('Schedule follow-up as appropriate')
-  }
-
-  // Determine chief complaint from most recent/severe condition
+  // Determine chief complaint
   const chiefComplaint = activeProblems[0] || 'Routine follow-up'
 
   return {
@@ -197,8 +348,10 @@ function generateClinicalSummary(
     recentLabs,
     vitals: recentVitals,
     medications: activeMeds,
-    recommendations,
-    clinicalAlerts,
+    recommendations: cds.recommendations,
+    clinicalAlerts: cds.alerts,
+    clinicalInsights: cds.insights,
+    riskFactors: cds.risks,
     isAIGenerated: false,
   }
 }
@@ -280,10 +433,11 @@ export function SmartNotesPanel({ patientId, patientName }: SmartNotesPanelProps
     setAiError(null)
 
     try {
-      // Prepare data for AI
+      // Prepare data for AI - filter out social determinant findings
+      const medicalConditions = conditions.filter(isMedicalCondition)
       const patientData = {
         patientName: patientName || 'Patient',
-        conditions: conditions.map(c => ({
+        conditions: medicalConditions.map(c => ({
           name: formatConditionName(c),
           status: c.clinicalStatus?.coding?.[0]?.code || 'active',
         })),
@@ -551,31 +705,80 @@ export function SmartNotesPanel({ patientId, patientName }: SmartNotesPanelProps
           </TabsContent>
 
           <TabsContent value="alerts" className="space-y-4">
-            {summary.clinicalAlerts.length > 0 ? (
-              <div className="space-y-2">
-                {summary.clinicalAlerts.map((alert: string, i: number) => (
-                  <div key={i} className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <span className="text-sm text-red-800">{alert}</span>
-                  </div>
-                ))}
+            {/* Critical Alerts */}
+            {summary.clinicalAlerts.length > 0 && (
+              <div>
+                <h4 className="font-medium flex items-center gap-2 mb-2 text-red-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  Critical Alerts
+                </h4>
+                <div className="space-y-2">
+                  {summary.clinicalAlerts.map((alert: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <AlertTriangle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-red-800">{alert}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <p className="text-muted-foreground text-center py-4">No active alerts</p>
             )}
 
+            {/* Clinical Insights */}
+            {summary.clinicalInsights && summary.clinicalInsights.length > 0 && (
+              <div>
+                <h4 className="font-medium flex items-center gap-2 mb-2 text-blue-700">
+                  <TrendingUp className="h-4 w-4" />
+                  Clinical Insights
+                </h4>
+                <div className="space-y-2">
+                  {summary.clinicalInsights.map((insight: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                      <span className="text-sm text-blue-800">{insight}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Risk Factors */}
+            {summary.riskFactors && summary.riskFactors.length > 0 && (
+              <div>
+                <h4 className="font-medium flex items-center gap-2 mb-2 text-amber-700">
+                  <AlertTriangle className="h-4 w-4" />
+                  Risk Factors
+                </h4>
+                <div className="space-y-2">
+                  {summary.riskFactors.map((risk: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <span className="text-sm text-amber-800">{risk}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recommendations */}
             {summary.recommendations.length > 0 && (
-              <div className="mt-4">
-                <h4 className="font-medium mb-2">Recommendations</h4>
+              <div>
+                <h4 className="font-medium flex items-center gap-2 mb-2 text-green-700">
+                  <Activity className="h-4 w-4" />
+                  Recommendations
+                </h4>
                 <ul className="space-y-2">
                   {summary.recommendations.map((rec, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-green-600">•</span>
-                      {rec}
+                    <li key={i} className="flex items-start gap-2 text-sm bg-green-50 border border-green-200 rounded-lg p-3">
+                      <span className="text-green-600 font-bold">→</span>
+                      <span className="text-green-800">{rec}</span>
                     </li>
                   ))}
                 </ul>
               </div>
+            )}
+
+            {summary.clinicalAlerts.length === 0 && 
+             (!summary.clinicalInsights || summary.clinicalInsights.length === 0) &&
+             (!summary.riskFactors || summary.riskFactors.length === 0) && (
+              <p className="text-muted-foreground text-center py-4">No alerts or insights at this time</p>
             )}
           </TabsContent>
         </Tabs>

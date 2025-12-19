@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,25 +12,15 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get('patient')
     const status = searchParams.get('status')
     const relationship = searchParams.get('relationship')
-    const _count = searchParams.get('_count') || '50'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (patientId) params.set('patient', patientId)
-    if (status) params.set('status', status)
-    if (relationship) params.set('relationship', relationship)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('FamilyMemberHistory').count(_count)
+    if (patientId) query = query.where('patient', `Patient/${patientId}` as any)
+    if (status) query = query.where('status', status as any)
+    if (relationship) query = query.where('relationship', relationship as any)
 
-    const response = await aidboxFetch(`/FamilyMemberHistory?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch family histories: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const histories = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || histories.length
 
@@ -52,26 +42,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const history = {
-      resourceType: 'FamilyMemberHistory',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('FamilyMemberHistory', {
       status: 'completed',
       ...body,
-    }
-
-    const response = await aidboxFetch('/FamilyMemberHistory', {
-      method: 'POST',
-      body: JSON.stringify(history),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create family history: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('FamilyMemberHistory create error:', error)

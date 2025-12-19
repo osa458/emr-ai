@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { aidboxFetch } from '@/lib/aidbox'
+import { aidbox } from '@/lib/aidbox'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,25 +12,15 @@ export async function GET(request: NextRequest) {
     const patientId = searchParams.get('patient')
     const encounterId = searchParams.get('encounter')
     const status = searchParams.get('status')
-    const _count = searchParams.get('_count') || '50'
+    const _count = parseInt(searchParams.get('_count') || '50')
 
-    const params = new URLSearchParams()
-    params.set('_count', _count)
-    if (patientId) params.set('patient', patientId)
-    if (encounterId) params.set('encounter', encounterId)
-    if (status) params.set('status', status)
+    // Use Aidbox SDK
+    let query = aidbox.resource.list('CareTeam').count(_count)
+    if (patientId) query = query.where('subject', `Patient/${patientId}` as any)
+    if (encounterId) query = query.where('encounter', `Encounter/${encounterId}` as any)
+    if (status) query = query.where('status', status as any)
 
-    const response = await aidboxFetch(`/CareTeam?${params.toString()}`)
-    
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to fetch care teams: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const bundle = await response.json()
+    const bundle = await query
     const careTeams = (bundle.entry || []).map((e: any) => e.resource)
     const total = bundle.total || careTeams.length
 
@@ -52,26 +42,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
-    const careTeam = {
-      resourceType: 'CareTeam',
+    // Use Aidbox SDK
+    const created = await aidbox.resource.create('CareTeam', {
       status: 'active',
       ...body,
-    }
-
-    const response = await aidboxFetch('/CareTeam', {
-      method: 'POST',
-      body: JSON.stringify(careTeam),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      return NextResponse.json(
-        { success: false, error: `Failed to create care team: ${error}` },
-        { status: response.status }
-      )
-    }
-
-    const created = await response.json()
+    } as any)
     return NextResponse.json({ success: true, data: created }, { status: 201 })
   } catch (error: any) {
     console.error('CareTeam create error:', error)

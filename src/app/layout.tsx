@@ -5,6 +5,7 @@ import { Providers } from './providers'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { FontSizeManager } from '@/components/FontSizeManager'
 import { MainLayout } from '@/components/layout/MainLayout'
+import { Toaster } from '@/components/ui/toaster'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -26,6 +27,7 @@ export default function RootLayout({
           <MainLayout>
             {children}
           </MainLayout>
+          <Toaster />
         </Providers>
       </body>
     </html>
