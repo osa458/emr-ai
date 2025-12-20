@@ -92,7 +92,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
     : singleOrders
 
   const filteredOrderSets = orderSearch
-    ? orderSets.filter(s => s.name.toLowerCase().includes(orderSearch.toLowerCase()) || s.category.toLowerCase().includes(orderSearch.toLowerCase()))
+    ? orderSets.filter((s: OrderSet) => s.name.toLowerCase().includes(orderSearch.toLowerCase()) || s.category.toLowerCase().includes(orderSearch.toLowerCase()))
     : orderSets
 
   // Order helpers
