@@ -62,7 +62,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
   } = useOrderSets()
 
   // Use FHIR order sets if available, otherwise fall back to hardcoded
-  const orderSets = useMemo(() => {
+  const orderSets: OrderSet[] = useMemo(() => {
     if (fhirOrderSets && fhirOrderSets.length > 0) {
       return fhirOrderSets
     }
