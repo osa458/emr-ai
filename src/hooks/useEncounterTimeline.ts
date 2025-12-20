@@ -146,7 +146,7 @@ function orderToEvent(order: ServiceRequest): TimelineEvent {
         timestamp: new Date(order.authoredOn || Date.now()),
         author: order.requester?.display || 'Provider',
         status: order.status === 'completed' ? 'completed' :
-            order.status === 'revoked' || order.status === 'cancelled' ? 'cancelled' : 'pending',
+            order.status === 'revoked' || order.status === 'entered-in-error' ? 'cancelled' : 'pending',
         priority: order.priority === 'stat' ? 'stat' :
             order.priority === 'urgent' ? 'urgent' : 'routine',
         resourceType: 'ServiceRequest',
