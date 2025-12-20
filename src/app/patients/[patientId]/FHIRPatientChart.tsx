@@ -61,6 +61,7 @@ import { TasksPanel } from '@/components/chart/TasksPanel'
 import { CarePlanPanel } from '@/components/chart/CarePlanPanel'
 import { CoveragePanel } from '@/components/chart/CoveragePanel'
 import { PatientStickyNote } from '@/components/patients/PatientStickyNote'
+import { EncountersPanel } from '@/components/chart/EncountersPanel'
 import Link from 'next/link'
 
 interface FHIRPatientChartProps {
@@ -109,7 +110,7 @@ const formatVital = (vital: any) => {
   const value = vital.valueQuantity?.value || vital.component?.[0]?.valueQuantity?.value
   const unit = vital.valueQuantity?.unit || vital.component?.[0]?.valueQuantity?.unit || ''
   const date = vital.effectiveDateTime || vital.effectivePeriod?.start || 'Unknown'
-  
+
   return {
     name: code,
     value: value ? `${value} ${unit}`.trim() : 'No value',
@@ -123,7 +124,7 @@ const formatLab = (lab: any) => {
   const value = lab.valueQuantity?.value
   const unit = lab.valueQuantity?.unit || ''
   const date = lab.effectiveDateTime || 'Unknown'
-  
+
   // Determine if value is abnormal from FHIR interpretation
   let flag = ''
   if (lab.interpretation?.length > 0) {
@@ -132,7 +133,7 @@ const formatLab = (lab: any) => {
     else if (interpCode === 'L' || interpCode === 'LL' || interpCode === 'LOW') flag = 'L'
     else if (interpCode === 'A' || interpCode === 'AA') flag = 'A' // Abnormal
   }
-  
+
   // Fallback: check reference ranges if no interpretation
   if (!flag && value && lab.referenceRange?.length > 0) {
     const range = lab.referenceRange[0]
@@ -141,7 +142,7 @@ const formatLab = (lab: any) => {
     if (low !== undefined && value < low) flag = 'L'
     else if (high !== undefined && value > high) flag = 'H'
   }
-  
+
   return {
     name,
     value: value !== undefined ? `${Math.round(value * 100) / 100} ${unit}`.trim() : 'Pending',
@@ -153,14 +154,14 @@ const formatLab = (lab: any) => {
 }
 
 const formatMedication = (med: any) => {
-  const name = med.medicationCodeableConcept?.text || 
-               med.medicationCodeableConcept?.coding?.[0]?.display || 
-               med.medicationReference?.display || 'Unknown medication'
+  const name = med.medicationCodeableConcept?.text ||
+    med.medicationCodeableConcept?.coding?.[0]?.display ||
+    med.medicationReference?.display || 'Unknown medication'
   const dosage = med.dosageInstruction?.[0]
   const dose = dosage?.doseAndRate?.[0]?.doseQuantity?.value || ''
   const doseUnit = dosage?.doseAndRate?.[0]?.doseQuantity?.unit || ''
   const frequency = dosage?.timing?.repeat?.frequency || dosage?.timing?.repeat?.code?.coding?.[0]?.display || 'Unknown'
-  
+
   return {
     name,
     dose: dose ? `${dose} ${doseUnit}`.trim() : '',
@@ -174,7 +175,7 @@ const formatProcedure = (procedure: any) => {
   const name = procedure.code?.text || procedure.code?.coding?.[0]?.display || 'Unknown procedure'
   const date = procedure.performedDateTime || procedure.performedPeriod?.start || 'Unknown'
   const status = procedure.status || 'completed'
-  
+
   return {
     name,
     date: new Date(date).toLocaleDateString(),
@@ -186,7 +187,7 @@ const formatImaging = (report: any) => {
   const name = report.code?.text || report.code?.coding?.[0]?.display || 'Unknown study'
   const date = report.effectiveDateTime || 'Unknown'
   const conclusion = report.conclusion || 'No conclusion available'
-  
+
   return {
     type: name,
     date: new Date(date).toLocaleDateString(),
@@ -225,15 +226,15 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
       name: lab.code?.coding?.[0]?.code || formatted.name,
       value: formatted.value.split(' ')[0],
       unit: formatted.value.split(' ')[1] || '',
-      status: formatted.flag === 'H' || formatted.flag === 'HH' ? 'high' as const : 
-              formatted.flag === 'L' || formatted.flag === 'LL' ? 'low' as const : 'normal' as const,
+      status: formatted.flag === 'H' || formatted.flag === 'HH' ? 'high' as const :
+        formatted.flag === 'L' || formatted.flag === 'LL' ? 'low' as const : 'normal' as const,
       trend: 'stable' as const, // Would need historical data for trend
     }
   })
 
-  const isLoading = conditionsLoading || vitalsLoading || labsLoading || 
-                   proceduresLoading || imagingLoading || tasksLoading || 
-                   carePlansLoading || coverageLoading || allergiesLoading
+  const isLoading = conditionsLoading || vitalsLoading || labsLoading ||
+    proceduresLoading || imagingLoading || tasksLoading ||
+    carePlansLoading || coverageLoading || allergiesLoading
 
   if (isLoading) {
     return (
@@ -292,456 +293,460 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
       </div>
 
       <div className="flex flex-col lg:flex-row flex-1">
-      {/* Left Sidebar - Patient Demographics - Collapsible on mobile */}
-      <div className="lg:w-72 flex-shrink-0 border-b lg:border-b-0 lg:border-r bg-muted/30 p-3 lg:p-4 space-y-3 lg:space-y-4">
-        {/* Patient Avatar & Name */}
-        <div className="text-center">
-          <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-3">
-            {patient.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || '?'}
+        {/* Left Sidebar - Patient Demographics - Collapsible on mobile */}
+        <div className="lg:w-72 flex-shrink-0 border-b lg:border-b-0 lg:border-r bg-muted/30 p-3 lg:p-4 space-y-3 lg:space-y-4">
+          {/* Patient Avatar & Name */}
+          <div className="text-center">
+            <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold mb-3">
+              {patient.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || '?'}
+            </div>
+            <h2 className="text-lg font-bold">{patient.name}</h2>
+            <p className="text-sm text-muted-foreground">MRN: {patient.mrn}</p>
           </div>
-          <h2 className="text-lg font-bold">{patient.name}</h2>
-          <p className="text-sm text-muted-foreground">MRN: {patient.mrn}</p>
-        </div>
 
-        {/* Demographics Card */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Demographics
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">DOB</span>
-              <span className="font-medium">
-                {patient.birthDate ? new Date(patient.birthDate).toLocaleDateString() : 'Unknown'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Age</span>
-              <span className="font-medium">{patient.age || 0} years</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Sex</span>
-              <span className="font-medium capitalize">{patient.gender}</span>
-            </div>
-            {patient.maritalStatus && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Marital Status</span>
-                <span className="font-medium">{patient.maritalStatus}</span>
-              </div>
-            )}
-            {patient.language && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Language</span>
-                <span className="font-medium">{patient.language}</span>
-              </div>
-            )}
-            {patient.race && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Race</span>
-                <span className="font-medium">{patient.race}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Contact Info Card */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Phone className="h-4 w-4" />
-              Contact
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {patient.phone ? (
-              <div className="flex items-center gap-2">
-                <Phone className="h-3 w-3 text-muted-foreground" />
-                <span>{patient.phone}</span>
-              </div>
-            ) : (
-              <div className="text-muted-foreground text-xs">No phone on file</div>
-            )}
-            {patient.email && (
-              <div className="flex items-center gap-2">
-                <Mail className="h-3 w-3 text-muted-foreground" />
-                <span className="truncate">{patient.email}</span>
-              </div>
-            )}
-            {patient.address && (
-              <div className="pt-2 border-t">
-                <div className="flex items-start gap-2">
-                  <MapPin className="h-3 w-3 text-muted-foreground mt-1" />
-                  <div>
-                    {patient.address.lines && <div>{patient.address.lines}</div>}
-                    <div>
-                      {patient.address.city}{patient.address.state ? `, ${patient.address.state}` : ''} {patient.address.postalCode}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Clinical Info Card */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Heart className="h-4 w-4" />
-              Clinical Info
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Code Status</span>
-              <Badge className="bg-green-100 text-green-800">Not Specified</Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-muted-foreground">Attending</span>
-              <span className="font-medium text-muted-foreground">Not Assigned</span>
-            </div>
-            <div className="pt-2 border-t">
-              <div className="flex items-center gap-2 text-red-600">
-                <AlertCircle className="h-4 w-4" />
-                <span className="font-medium">Allergies</span>
-              </div>
-              <div className="mt-1">
-                {allergies.length > 0 ? (
-                  allergies.slice(0, 3).map((allergy: any, i: number) => {
-                    const allergenName = allergy.code?.text || 
-                                        allergy.code?.coding?.[0]?.display || 
-                                        'Unknown allergen'
-                    return (
-                      <Badge key={i} variant="destructive" className="text-xs mr-1 mb-1">
-                        {allergenName}
-                      </Badge>
-                    )
-                  })
-                ) : (
-                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
-                    NKDA
-                  </Badge>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Insurance Card */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              Insurance
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            {coverage.length > 0 ? (
-              <div className="space-y-2">
-                {coverage.slice(0, 2).map((cov: any, i: number) => (
-                  <div key={i} className="text-xs">
-                    <div className="font-medium">{cov.payor?.[0]?.display || 'Insurance'}</div>
-                    <div className="text-muted-foreground">{cov.subscriberId || 'No ID'}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-muted-foreground text-xs">No insurance on file</div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Link href="/patients" className="block">
-          <Button variant="outline" className="w-full">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Patients
-          </Button>
-        </Link>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 p-6 space-y-6 overflow-auto">
-        {/* Patient Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">{patient.name}</h1>
-            <p className="text-muted-foreground">
-              {patient.age}y • {patient.gender} • MRN: {patient.mrn}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline">
-              <FileText className="h-4 w-4 mr-2" />
-              Summary
-            </Button>
-            <Button>
-              <Stethoscope className="h-4 w-4 mr-2" />
-              Actions
-            </Button>
-          </div>
-        </div>
-
-        {/* Quick Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Demographics Card */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Location</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                <span className="font-semibold">{patient.location || 'Unknown'}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Attending</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
+              <CardTitle className="text-sm flex items-center gap-2">
                 <User className="h-4 w-4" />
-                <span className="font-semibold text-muted-foreground">Not Assigned</span>
+                Demographics
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">DOB</span>
+                <span className="font-medium">
+                  {patient.birthDate ? new Date(patient.birthDate).toLocaleDateString() : 'Unknown'}
+                </span>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Code Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Badge className="bg-gray-100 text-gray-800">Not Specified</Badge>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Allergies</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {allergies.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {allergies.slice(0, 2).map((allergy: any, i: number) => {
-                    const allergenName = allergy.code?.text || 
-                                        allergy.code?.coding?.[0]?.display || 
-                                        'Unknown'
-                    return (
-                      <Badge key={i} variant="destructive" className="text-xs">
-                        {allergenName}
-                      </Badge>
-                    )
-                  })}
-                  {allergies.length > 2 && (
-                    <Badge variant="outline" className="text-xs">+{allergies.length - 2}</Badge>
-                  )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Age</span>
+                <span className="font-medium">{patient.age || 0} years</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Sex</span>
+                <span className="font-medium capitalize">{patient.gender}</span>
+              </div>
+              {patient.maritalStatus && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Marital Status</span>
+                  <span className="font-medium">{patient.maritalStatus}</span>
                 </div>
-              ) : (
-                <Badge variant="outline" className="bg-green-50 text-green-700">NKDA</Badge>
+              )}
+              {patient.language && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Language</span>
+                  <span className="font-medium">{patient.language}</span>
+                </div>
+              )}
+              {patient.race && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Race</span>
+                  <span className="font-medium">{patient.race}</span>
+                </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Contact Info Card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Phone className="h-4 w-4" />
+                Contact
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {patient.phone ? (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-3 w-3 text-muted-foreground" />
+                  <span>{patient.phone}</span>
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-xs">No phone on file</div>
+              )}
+              {patient.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-3 w-3 text-muted-foreground" />
+                  <span className="truncate">{patient.email}</span>
+                </div>
+              )}
+              {patient.address && (
+                <div className="pt-2 border-t">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-3 w-3 text-muted-foreground mt-1" />
+                    <div>
+                      {patient.address.lines && <div>{patient.address.lines}</div>}
+                      <div>
+                        {patient.address.city}{patient.address.state ? `, ${patient.address.state}` : ''} {patient.address.postalCode}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Clinical Info Card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Heart className="h-4 w-4" />
+                Clinical Info
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Code Status</span>
+                <Badge className="bg-green-100 text-green-800">Not Specified</Badge>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Attending</span>
+                <span className="font-medium text-muted-foreground">Not Assigned</span>
+              </div>
+              <div className="pt-2 border-t">
+                <div className="flex items-center gap-2 text-red-600">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="font-medium">Allergies</span>
+                </div>
+                <div className="mt-1">
+                  {allergies.length > 0 ? (
+                    allergies.slice(0, 3).map((allergy: any, i: number) => {
+                      const allergenName = allergy.code?.text ||
+                        allergy.code?.coding?.[0]?.display ||
+                        'Unknown allergen'
+                      return (
+                        <Badge key={i} variant="destructive" className="text-xs mr-1 mb-1">
+                          {allergenName}
+                        </Badge>
+                      )
+                    })
+                  ) : (
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+                      NKDA
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Insurance Card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <CreditCard className="h-4 w-4" />
+                Insurance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm">
+              {coverage.length > 0 ? (
+                <div className="space-y-2">
+                  {coverage.slice(0, 2).map((cov: any, i: number) => (
+                    <div key={i} className="text-xs">
+                      <div className="font-medium">{cov.payor?.[0]?.display || 'Insurance'}</div>
+                      <div className="text-muted-foreground">{cov.subscriberId || 'No ID'}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-xs">No insurance on file</div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Link href="/patients" className="block">
+            <Button variant="outline" className="w-full">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Patients
+            </Button>
+          </Link>
         </div>
 
-        {/* Key Labs */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Key Labs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {keyLabs.map((lab, i) => (
-                <div key={i} className="text-center">
-                  <div className="text-sm text-muted-foreground">{lab.name}</div>
-                  <div className={`font-bold ${
-                    lab.status === 'high' ? 'text-red-600' : 
-                    lab.status === 'low' ? 'text-blue-600' : 'text-green-600'
-                  }`}>
-                    {lab.value}
+        {/* Main Content Area */}
+        <div className="flex-1 p-6 space-y-6 overflow-auto">
+          {/* Patient Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">{patient.name}</h1>
+              <p className="text-muted-foreground">
+                {patient.age}y • {patient.gender} • MRN: {patient.mrn}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline">
+                <FileText className="h-4 w-4 mr-2" />
+                Summary
+              </Button>
+              <Button>
+                <Stethoscope className="h-4 w-4 mr-2" />
+                Actions
+              </Button>
+            </div>
+          </div>
+
+          {/* Quick Info Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Location</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  <span className="font-semibold">{patient.location || 'Unknown'}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Attending</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <span className="font-semibold text-muted-foreground">Not Assigned</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Code Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Badge className="bg-gray-100 text-gray-800">Not Specified</Badge>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Allergies</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {allergies.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {allergies.slice(0, 2).map((allergy: any, i: number) => {
+                      const allergenName = allergy.code?.text ||
+                        allergy.code?.coding?.[0]?.display ||
+                        'Unknown'
+                      return (
+                        <Badge key={i} variant="destructive" className="text-xs">
+                          {allergenName}
+                        </Badge>
+                      )
+                    })}
+                    {allergies.length > 2 && (
+                      <Badge variant="outline" className="text-xs">+{allergies.length - 2}</Badge>
+                    )}
                   </div>
-                  <div className="text-xs text-muted-foreground">{lab.unit}</div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Main Tabs - Mobile Responsive */}
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="flex flex-wrap h-auto gap-1 p-1 sm:grid sm:grid-cols-4 md:grid-cols-8">
-          <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
-          <TabsTrigger value="labs" className="text-xs sm:text-sm">Labs</TabsTrigger>
-          <TabsTrigger value="medications" className="text-xs sm:text-sm">Meds</TabsTrigger>
-          <TabsTrigger value="imaging" className="text-xs sm:text-sm">Imaging</TabsTrigger>
-          <TabsTrigger value="procedures" className="text-xs sm:text-sm">Procedures</TabsTrigger>
-          <TabsTrigger value="notes" className="text-xs sm:text-sm">Notes</TabsTrigger>
-          <TabsTrigger value="orders" className="text-xs sm:text-sm">Orders</TabsTrigger>
-          <TabsTrigger value="tasks" className="text-xs sm:text-sm">Tasks</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Active Problems */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Active Problems ({formattedConditions.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {formattedConditions.slice(0, 8).map((condition, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between rounded-lg border p-2"
-                    >
-                      <span>{condition.name}</span>
-                      <Badge variant="outline">{condition.status}</Badge>
-                    </div>
-                  ))}
-                </div>
+                ) : (
+                  <Badge variant="outline" className="bg-green-50 text-green-700">NKDA</Badge>
+                )}
               </CardContent>
             </Card>
+          </div>
 
-            {/* Recent Vitals Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Latest Vitals ({formattedVitals.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-2">
-                  {formattedVitals.map((vital, i) => (
-                    <div key={i} className="rounded-lg border p-2">
-                      <div className="text-xs text-muted-foreground">
-                        {vital.name}
-                      </div>
-                      <div className="font-medium">{vital.value}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {vital.time}
-                      </div>
+          {/* Key Labs */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Key Labs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {keyLabs.map((lab, i) => (
+                  <div key={i} className="text-center">
+                    <div className="text-sm text-muted-foreground">{lab.name}</div>
+                    <div className={`font-bold ${lab.status === 'high' ? 'text-red-600' :
+                      lab.status === 'low' ? 'text-blue-600' : 'text-green-600'
+                      }`}>
+                      {lab.value}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                    <div className="text-xs text-muted-foreground">{lab.unit}</div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Labs Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Labs ({formattedLabs.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {formattedLabs.slice(0, 8).map((lab, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between border-b pb-2 last:border-0"
-                    >
-                      <span>{lab.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{lab.value}</span>
-                        {lab.flag && (
-                          <Badge
-                            className={
-                              lab.flag === 'H' || lab.flag === 'HH'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-blue-100 text-blue-800'
-                            }
-                          >
-                            {lab.flag}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+          {/* Main Tabs - Mobile Responsive */}
+          <Tabs defaultValue="overview" className="space-y-4">
+            <TabsList className="flex flex-wrap h-auto gap-1 p-1 sm:grid sm:grid-cols-4 md:grid-cols-8">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="encounters" className="text-xs sm:text-sm">Encounters</TabsTrigger>
+              <TabsTrigger value="labs" className="text-xs sm:text-sm">Labs</TabsTrigger>
+              <TabsTrigger value="medications" className="text-xs sm:text-sm">Meds</TabsTrigger>
+              <TabsTrigger value="imaging" className="text-xs sm:text-sm">Imaging</TabsTrigger>
+              <TabsTrigger value="procedures" className="text-xs sm:text-sm">Procedures</TabsTrigger>
+              <TabsTrigger value="notes" className="text-xs sm:text-sm">Notes</TabsTrigger>
+              <TabsTrigger value="orders" className="text-xs sm:text-sm">Orders</TabsTrigger>
+              <TabsTrigger value="tasks" className="text-xs sm:text-sm">Tasks</TabsTrigger>
+            </TabsList>
 
-            {/* Medications Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Pill className="h-5 w-5" />
-                  Active Medications ({formattedMedications.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {formattedMedications.slice(0, 8).map((med, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between rounded-lg border p-2"
-                    >
-                      <div>
-                        <div className="font-medium">{med.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {med.dose} {med.frequency}
+            <TabsContent value="overview" className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Active Problems */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Active Problems ({formattedConditions.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {formattedConditions.slice(0, 8).map((condition, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between rounded-lg border p-2"
+                        >
+                          <span>{condition.name}</span>
+                          <Badge variant="outline">{condition.status}</Badge>
                         </div>
-                      </div>
-                      <Badge variant="outline">{med.status}</Badge>
+                      ))}
                     </div>
-                  ))}
+                  </CardContent>
+                </Card>
+
+                {/* Recent Vitals Summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="h-5 w-5" />
+                      Latest Vitals ({formattedVitals.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-2">
+                      {formattedVitals.map((vital, i) => (
+                        <div key={i} className="rounded-lg border p-2">
+                          <div className="text-xs text-muted-foreground">
+                            {vital.name}
+                          </div>
+                          <div className="font-medium">{vital.value}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {vital.time}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Labs Summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recent Labs ({formattedLabs.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {formattedLabs.slice(0, 8).map((lab, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between border-b pb-2 last:border-0"
+                        >
+                          <span>{lab.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{lab.value}</span>
+                            {lab.flag && (
+                              <Badge
+                                className={
+                                  lab.flag === 'H' || lab.flag === 'HH'
+                                    ? 'bg-red-100 text-red-800'
+                                    : 'bg-blue-100 text-blue-800'
+                                }
+                              >
+                                {lab.flag}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Medications Summary */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Pill className="h-5 w-5" />
+                      Active Medications ({formattedMedications.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {formattedMedications.slice(0, 8).map((med, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between rounded-lg border p-2"
+                        >
+                          <div>
+                            <div className="font-medium">{med.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {med.dose} {med.frequency}
+                            </div>
+                          </div>
+                          <Badge variant="outline">{med.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* AI Panels */}
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <ClinicalNotePanel patientId={patientId} patientName={patient.name} />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+                <div className="space-y-4">
+                  <SmartNotesPanel patientId={patientId} patientName={patient.name} />
+                  <DiagnosticAssistPanel patientId={patientId} patientName={patient.name} />
+                </div>
+              </div>
+            </TabsContent>
 
-          {/* AI Panels */}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ClinicalNotePanel patientId={patientId} patientName={patient.name} />
-            </div>
-            <div className="space-y-4">
-              <SmartNotesPanel patientId={patientId} patientName={patient.name} />
-              <DiagnosticAssistPanel patientId={patientId} patientName={patient.name} />
-            </div>
-          </div>
-        </TabsContent>
+            <TabsContent value="encounters">
+              <EncountersPanel patientId={patientId} />
+            </TabsContent>
 
-        <TabsContent value="labs">
-          <div className="space-y-4">
-            <LabsTable labs={labs} isLoading={labsLoading} />
-            <LabsTrend patientId={patientId} />
-          </div>
-        </TabsContent>
+            <TabsContent value="labs">
+              <div className="space-y-4">
+                <LabsTable labs={labs} isLoading={labsLoading} />
+                <LabsTrend patientId={patientId} />
+              </div>
+            </TabsContent>
 
-        <TabsContent value="medications">
-          <MedicationsPanel 
-            inpatientMedications={medications.inpatientMedications} 
-            homeMedications={medications.homeMedications}
-          />
-        </TabsContent>
+            <TabsContent value="medications">
+              <MedicationsPanel
+                inpatientMedications={medications.inpatientMedications}
+                homeMedications={medications.homeMedications}
+              />
+            </TabsContent>
 
-        <TabsContent value="imaging">
-          <ImagingList imagingStudies={imaging} isLoading={imagingLoading} />
-        </TabsContent>
+            <TabsContent value="imaging">
+              <ImagingList imagingStudies={imaging} isLoading={imagingLoading} />
+            </TabsContent>
 
-        <TabsContent value="procedures">
-          <ProceduresPanel patientId={patientId} />
-        </TabsContent>
+            <TabsContent value="procedures">
+              <ProceduresPanel patientId={patientId} />
+            </TabsContent>
 
-        <TabsContent value="notes">
-          <NotesPanel patientId={patientId} />
-        </TabsContent>
+            <TabsContent value="notes">
+              <NotesPanel patientId={patientId} />
+            </TabsContent>
 
-        <TabsContent value="orders">
-          <OrdersPanel patientId={patientId} />
-        </TabsContent>
+            <TabsContent value="orders">
+              <OrdersPanel patientId={patientId} />
+            </TabsContent>
 
-        <TabsContent value="tasks">
-          <TasksPanel patientId={patientId} />
-        </TabsContent>
-      </Tabs>
-      </div>
+            <TabsContent value="tasks">
+              <TasksPanel patientId={patientId} />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   )

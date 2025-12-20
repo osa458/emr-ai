@@ -282,7 +282,7 @@ function createLabObservation(patientId: string, labKey: string, date: string, a
 
   const range = lab.high - lab.low;
   let value: number;
-  
+
   if (abnormal) {
     // Generate abnormal value (either high or low)
     if (Math.random() > 0.5) {
@@ -705,6 +705,157 @@ function createCarePlan(patientId: string, title: string, goals: string[], date:
   };
 }
 
+// Note types for clinical documentation
+const noteTypes = {
+  progress: { code: '11506-3', display: 'Progress note' },
+  admission: { code: '34133-9', display: 'Admission evaluation note' },
+  discharge: { code: '18842-5', display: 'Discharge summary' },
+  consult: { code: '11488-4', display: 'Consultation note' },
+  procedure: { code: '28570-0', display: 'Procedure note' },
+};
+
+// Generate clinical note (DocumentReference)
+function createDocumentReference(
+  patientId: string,
+  noteType: keyof typeof noteTypes,
+  content: string,
+  date: string,
+  author?: string
+): any {
+  const type = noteTypes[noteType];
+
+  return {
+    resourceType: 'DocumentReference',
+    id: generateUUID(),
+    status: 'current',
+    docStatus: 'final',
+    type: {
+      coding: [{
+        system: 'http://loinc.org',
+        code: type.code,
+        display: type.display,
+      }],
+      text: type.display,
+    },
+    category: [{
+      coding: [{
+        system: 'http://hl7.org/fhir/us/core/CodeSystem/us-core-documentreference-category',
+        code: 'clinical-note',
+        display: 'Clinical Note',
+      }],
+    }],
+    subject: {
+      id: patientId,
+      resourceType: 'Patient',
+    },
+    date: date,
+    author: author ? [{
+      display: author,
+    }] : undefined,
+    content: [{
+      attachment: {
+        contentType: 'text/plain',
+        data: Buffer.from(content).toString('base64'),
+      },
+    }],
+  };
+}
+
+// Generate progress note content based on conditions
+function generateProgressNoteContent(conditions: ConditionTemplate[], medications: MedicationTemplate[]): string {
+  const conditionList = conditions.map(c => c.display).join(', ');
+  const medList = medications.slice(0, 3).map(m => `${m.display} ${m.dose}${m.unit} ${m.frequency}`).join('\\n  - ');
+
+  return `PROGRESS NOTE
+
+SUBJECTIVE:
+Patient presents for follow-up of ${conditionList}. Reports feeling generally well with current medication regimen. Denies chest pain, shortness of breath, or dizziness. Compliance with medications has been good.
+
+OBJECTIVE:
+General: Alert, oriented, no acute distress
+Vitals: See flowsheet
+Cardiac: Regular rate and rhythm, no murmurs
+Lungs: Clear to auscultation bilaterally
+Extremities: No edema
+
+ASSESSMENT:
+${conditions.map((c, i) => `${i + 1}. ${c.display} - stable on current regimen`).join('\\n')}
+
+PLAN:
+  - Continue current medications:
+  - ${medList}
+  - Labs ordered as appropriate
+  - Follow up in 3 months or sooner if symptoms worsen
+  - Encouraged lifestyle modifications including diet and exercise`;
+}
+
+// Generate admission note content
+function generateAdmissionNoteContent(conditions: ConditionTemplate[], reason: string): string {
+  return `ADMISSION HISTORY AND PHYSICAL
+
+CHIEF COMPLAINT:
+${reason}
+
+HISTORY OF PRESENT ILLNESS:
+Patient is a adult with history of ${conditions.map(c => c.display).join(', ')} who presents with ${reason.toLowerCase()}. Patient reports symptoms began approximately 2-3 days ago and have progressively worsened.
+
+PAST MEDICAL HISTORY:
+${conditions.map(c => `- ${c.display}`).join('\\n')}
+
+MEDICATIONS:
+See medication reconciliation
+
+ALLERGIES:
+See allergy list
+
+PHYSICAL EXAMINATION:
+General: Alert but appears uncomfortable
+Vitals: See flowsheet
+HEENT: PERRL, no JVD
+Cardiac: Regular rate, no murmurs
+Lungs: Decreased breath sounds at bases bilaterally
+Abdomen: Soft, non-tender
+Extremities: 1+ pitting edema bilateral lower extremities
+
+ASSESSMENT/PLAN:
+1. Acute presentation requiring inpatient management
+2. Will initiate appropriate workup and treatment
+3. Continue home medications as appropriate
+4. Consults ordered as needed`;
+}
+
+// Generate discharge summary content
+function generateDischargeSummaryContent(conditions: ConditionTemplate[], hospital: string, duration: number): string {
+  return `DISCHARGE SUMMARY
+
+ADMISSION DATE: ${new Date(Date.now() - duration * 24 * 60 * 60 * 1000).toLocaleDateString()}
+DISCHARGE DATE: ${new Date().toLocaleDateString()}
+LENGTH OF STAY: ${duration} days
+
+DISCHARGE DIAGNOSES:
+${conditions.map((c, i) => `${i + 1}. ${c.display}`).join('\\n')}
+
+HOSPITAL COURSE:
+Patient was admitted for management of acute symptoms. Initial workup revealed expected findings consistent with diagnoses. Patient was treated with appropriate medications and showed gradual improvement over the course of hospitalization.
+
+DISCHARGE CONDITION:
+Stable, improved from admission
+
+DISCHARGE MEDICATIONS:
+See medication list
+
+FOLLOW-UP:
+- Primary care: 1-2 weeks
+- Specialist follow-up as scheduled
+- Return to ED if symptoms worsen
+
+PATIENT EDUCATION PROVIDED:
+- Disease management
+- Medication instructions
+- Warning signs to watch for
+- Importance of follow-up`;
+}
+
 // Main function to generate all patient data
 async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   const resources: any[] = [];
@@ -731,7 +882,7 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   ];
 
   const commonLabs = ['sodium', 'potassium', 'chloride', 'bun', 'creatinine', 'glucose', 'wbc', 'hemoglobin', 'platelets'];
-  
+
   labDates.forEach((date, dateIndex) => {
     commonLabs.forEach(labKey => {
       // Make some results abnormal for older patients with chronic conditions
@@ -781,7 +932,7 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
     let temp = 36.8 + (Math.random() * 0.6 - 0.3);
     let respRate = 16 + (Math.random() * 4 - 2);
     let o2sat = 97 + (Math.random() * 3 - 1);
-    
+
     // Adjust for conditions
     if (profile.conditions.some(c => c.display.includes('Hypertension'))) {
       systolic += 15;
@@ -814,7 +965,7 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   // Generate Encounters
   const encounterTypes = ['office', 'office', 'office', 'telehealth'];
   if (patient.age > 60) encounterTypes.push('emergency');
-  
+
   for (let i = 0; i < 5; i++) {
     const encType = encounterTypes[Math.floor(Math.random() * encounterTypes.length)];
     const reason = profile.conditions[Math.floor(Math.random() * profile.conditions.length)]?.display || 'Routine checkup';
@@ -826,7 +977,7 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   const numAllergies = Math.floor(Math.random() * 2) + 1;
   const reactions = ['Rash', 'Hives', 'Anaphylaxis', 'Nausea', 'Swelling'];
   const severities = ['mild', 'moderate', 'severe'];
-  
+
   for (let i = 0; i < numAllergies; i++) {
     const allergen = allergies[Math.floor(Math.random() * allergies.length)];
     const reaction = reactions[Math.floor(Math.random() * reactions.length)];
@@ -835,11 +986,11 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   }
 
   // Generate Immunizations
-  const vaccines = patient.age >= 65 
+  const vaccines = patient.age >= 65
     ? ['Flu', 'COVID-19', 'Pneumonia', 'Shingles', 'Tdap']
     : patient.age >= 18
-    ? ['Flu', 'COVID-19', 'Tdap']
-    : ['Flu', 'DTaP', 'MMR', 'Hepatitis B'];
+      ? ['Flu', 'COVID-19', 'Tdap']
+      : ['Flu', 'DTaP', 'MMR', 'Hepatitis B'];
 
   vaccines.forEach(vaccine => {
     resources.push(createImmunization(patient.id, vaccine, randomDate(365, 30)));
@@ -849,8 +1000,8 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
   const imagingStudies = patient.age >= 65
     ? ['Chest X-Ray', 'Echocardiogram', 'DEXA Scan']
     : patient.age >= 40 && patient.gender === 'female'
-    ? ['Chest X-Ray', 'Mammogram']
-    : ['Chest X-Ray'];
+      ? ['Chest X-Ray', 'Mammogram']
+      : ['Chest X-Ray'];
 
   const findings = {
     'Chest X-Ray': ['No acute findings', 'Mild cardiomegaly', 'Clear lungs bilaterally'],
@@ -904,6 +1055,55 @@ async function generatePatientData(patient: PatientProfile): Promise<any[]> {
 
   if (goals.length > 0) {
     resources.push(createCarePlan(patient.id, 'Primary Care Management Plan', goals, randomDate(90, 0)));
+  }
+
+  // Generate Clinical Notes (DocumentReferences)
+  const physicians = [
+    'Dr. Sarah Anderson, MD',
+    'Dr. Michael Chen, MD',
+    'Dr. Jennifer Williams, MD',
+    'Dr. David Martinez, MD',
+    'Dr. Emily Thompson, DO'
+  ];
+
+  // Progress notes (2-3 per patient)
+  const numProgressNotes = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < numProgressNotes; i++) {
+    const content = generateProgressNoteContent(profile.conditions, profile.medications);
+    const author = physicians[Math.floor(Math.random() * physicians.length)];
+    resources.push(createDocumentReference(
+      patient.id,
+      'progress',
+      content,
+      randomDate(180, i * 60),
+      author
+    ));
+  }
+
+  // If older patient with chronic conditions, add admission/discharge notes
+  if (patient.age > 50 && profile.conditions.length >= 2) {
+    const admissionReason = profile.conditions[0]?.display + ' exacerbation' || 'Acute illness';
+    const admissionContent = generateAdmissionNoteContent(profile.conditions, admissionReason);
+    const dischargeContent = generateDischargeSummaryContent(profile.conditions, 'General Hospital', 4);
+
+    const admissionDate = randomDate(180, 90);
+    const admissionAuthor = physicians[Math.floor(Math.random() * physicians.length)];
+
+    resources.push(createDocumentReference(
+      patient.id,
+      'admission',
+      admissionContent,
+      admissionDate,
+      admissionAuthor
+    ));
+
+    resources.push(createDocumentReference(
+      patient.id,
+      'discharge',
+      dischargeContent,
+      admissionDate, // Same date context
+      admissionAuthor
+    ));
   }
 
   return resources;

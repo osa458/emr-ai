@@ -393,8 +393,8 @@ export function NotesPanel({ patientId }: NotesPanelProps) {
       }))
       setLocalNotes(converted)
     } else if (!notesLoading) {
-      // Fallback to mock data if no FHIR notes
-      setLocalNotes(generateMockNotes())
+      // No mock data fallback - show empty state
+      setLocalNotes([])
     }
   }, [fhirNotes, notesLoading])
 

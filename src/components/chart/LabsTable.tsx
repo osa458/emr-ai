@@ -60,7 +60,7 @@ function getTrend(values: number[]): 'up' | 'down' | 'stable' {
   const previous = values[1]
   const diff = recent - previous
   const percentChange = Math.abs(diff / previous) * 100
-  
+
   if (percentChange < 5) return 'stable'
   return diff > 0 ? 'up' : 'down'
 }
@@ -72,12 +72,12 @@ export function LabsTable({ labs, isLoading }: LabsTableProps) {
   // Group labs by test name and sort by date
   const groupedLabs = useMemo(() => {
     const groups: Record<string, LabGroup> = {}
-    
+
     const filteredLabs = labs.filter(lab => {
       const date = new Date(lab.effectiveDateTime || '')
       const now = new Date()
       const hoursDiff = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-      
+
       switch (timeRange) {
         case '24h': return hoursDiff <= 24
         case '7d': return hoursDiff <= 168
@@ -87,23 +87,23 @@ export function LabsTable({ labs, isLoading }: LabsTableProps) {
     })
 
     filteredLabs.forEach(lab => {
-      const name = lab.code?.text || lab.code?.coding?.[0]?.display || 'Unknown'
+      const name = lab.code?.text || lab.code?.coding?.[0]?.display || 'Test not specified'
       const code = lab.code?.coding?.[0]?.code || ''
-      
+
       if (!groups[name]) {
         groups[name] = { name, code, results: [] }
       }
-      
+
       const numericValue = lab.valueQuantity?.value
       const stringValue = lab.valueString
       const unit = lab.valueQuantity?.unit || ''
       const date = new Date(lab.effectiveDateTime || '')
-      
+
       // Handle numeric values
       if (numericValue !== undefined) {
         const flag = getLabFlag(name, numericValue)
         const range = referenceRanges[name]
-        
+
         groups[name].results.push({
           value: numericValue,
           unit,
@@ -111,14 +111,14 @@ export function LabsTable({ labs, isLoading }: LabsTableProps) {
           flag,
           referenceRange: range ? `${range.low}-${range.high}` : undefined,
         })
-      } 
+      }
       // Handle string values (cultures, etc.)
       else if (stringValue) {
         const interpretationCode = lab.interpretation?.[0]?.coding?.[0]?.code
-        const flag = interpretationCode === 'H' || interpretationCode === 'POS' ? 'H' 
-                   : interpretationCode === 'L' ? 'L' 
-                   : undefined
-        
+        const flag = interpretationCode === 'H' || interpretationCode === 'POS' ? 'H'
+          : interpretationCode === 'L' ? 'L'
+            : undefined
+
         groups[name].results.push({
           value: stringValue,
           unit: '',
@@ -145,13 +145,13 @@ export function LabsTable({ labs, isLoading }: LabsTableProps) {
     const metabolic = ['Sodium', 'Potassium', 'Creatinine', 'BUN', 'Glucose', 'CO2']
     const hematology = ['WBC', 'Hemoglobin', 'Hematocrit', 'Platelets']
     const cardiac = ['BNP', 'Troponin', 'CK-MB']
-    
+
     return {
       all: groupedLabs,
       metabolic: groupedLabs.filter(g => metabolic.some(m => g.name.includes(m))),
       hematology: groupedLabs.filter(g => hematology.some(h => g.name.includes(h))),
       cardiac: groupedLabs.filter(g => cardiac.some(c => g.name.includes(c))),
-      other: groupedLabs.filter(g => 
+      other: groupedLabs.filter(g =>
         !metabolic.some(m => g.name.includes(m)) &&
         !hematology.some(h => g.name.includes(h)) &&
         !cardiac.some(c => g.name.includes(c))
@@ -226,22 +226,22 @@ export function LabsTable({ labs, isLoading }: LabsTableProps) {
                   {displayedLabs.map((group) => {
                     const latest = group.results[0]
                     if (!latest) return null
-                    
+
                     const values = group.results.map(r => typeof r.value === 'number' ? r.value : 0)
                     const trend = getTrend(values)
-                    
+
                     return (
                       <TableRow key={group.name}>
                         <TableCell className="font-medium">{group.name}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className={latest.flag ? 'font-bold' : ''}>
-                              {typeof latest.value === 'string' && latest.value.length > 50 
-                                ? latest.value.substring(0, 50) + '...' 
+                              {typeof latest.value === 'string' && latest.value.length > 50
+                                ? latest.value.substring(0, 50) + '...'
                                 : latest.value} {latest.unit}
                             </span>
                             {latest.flag && (
-                              <Badge 
+                              <Badge
                                 variant={latest.flag === 'H' ? 'destructive' : 'secondary'}
                                 className={latest.flag === 'L' ? 'bg-blue-100 text-blue-800' : ''}
                               >

@@ -48,7 +48,8 @@ const intakeFormQuestionnaire: Questionnaire = {
       item: [
         { linkId: 'reason-for-visit', type: 'text', text: 'What is the main reason for your visit today?', required: true },
         { linkId: 'symptom-duration', type: 'string', text: 'How long have you had these symptoms?', required: true },
-        { linkId: 'pain-level', type: 'choice', text: 'Current pain level (0-10)', required: true,
+        {
+          linkId: 'pain-level', type: 'choice', text: 'Current pain level (0-10)', required: true,
           answerOption: [
             { valueString: '0 - No pain' },
             { valueString: '1-3 - Mild' },
@@ -127,7 +128,8 @@ const medicalHistoryQuestionnaire: Questionnaire = {
       type: 'group',
       text: 'Social History',
       item: [
-        { linkId: 'tobacco-use', type: 'choice', text: 'Tobacco use',
+        {
+          linkId: 'tobacco-use', type: 'choice', text: 'Tobacco use',
           answerOption: [
             { valueString: 'Never' },
             { valueString: 'Former' },
@@ -135,7 +137,8 @@ const medicalHistoryQuestionnaire: Questionnaire = {
             { valueString: 'Current - daily' }
           ]
         },
-        { linkId: 'alcohol-use', type: 'choice', text: 'Alcohol use',
+        {
+          linkId: 'alcohol-use', type: 'choice', text: 'Alcohol use',
           answerOption: [
             { valueString: 'Never' },
             { valueString: 'Occasional (1-2 drinks/week)' },
@@ -143,7 +146,8 @@ const medicalHistoryQuestionnaire: Questionnaire = {
             { valueString: 'Heavy (>7 drinks/week)' }
           ]
         },
-        { linkId: 'exercise', type: 'choice', text: 'Exercise frequency',
+        {
+          linkId: 'exercise', type: 'choice', text: 'Exercise frequency',
           answerOption: [
             { valueString: 'Never' },
             { valueString: '1-2 times/week' },
@@ -309,7 +313,7 @@ export default function PatientAdmitPage() {
   // Validation for each step
   const validateStep = useCallback((stepId: StepId): string[] => {
     const errs: string[] = []
-    
+
     switch (stepId) {
       case 'demographics':
         if (!demographics.firstName) errs.push('First name is required')
@@ -329,7 +333,7 @@ export default function PatientAdmitPage() {
         if (!insurance.policyNumber) errs.push('Policy number is required')
         break
     }
-    
+
     return errs
   }, [demographics, contact, insurance])
 
@@ -402,7 +406,7 @@ export default function PatientAdmitPage() {
       }
 
       const result = await response.json()
-      
+
       // Navigate to the new patient's chart
       router.push(`/patients/${result.patientId}`)
     } catch (error) {
@@ -938,13 +942,12 @@ export default function PatientAdmitPage() {
           {steps.map((step, index) => (
             <div key={step.id} className="flex items-center">
               <div
-                className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${
-                  index < currentStepIndex
+                className={`flex items-center justify-center w-10 h-10 rounded-full border-2 transition-colors ${index < currentStepIndex
                     ? 'bg-green-600 border-green-600 text-white'
                     : index === currentStepIndex
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : 'bg-white border-slate-300 text-slate-400'
-                }`}
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'bg-white border-slate-300 text-slate-400'
+                  }`}
               >
                 {index < currentStepIndex ? (
                   <Check className="h-5 w-5" />
@@ -954,9 +957,8 @@ export default function PatientAdmitPage() {
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`w-full h-1 mx-2 ${
-                    index < currentStepIndex ? 'bg-green-600' : 'bg-slate-200'
-                  }`}
+                  className={`w-full h-1 mx-2 ${index < currentStepIndex ? 'bg-green-600' : 'bg-slate-200'
+                    }`}
                   style={{ width: '60px' }}
                 />
               )}
@@ -967,9 +969,8 @@ export default function PatientAdmitPage() {
           {steps.map((step, index) => (
             <div
               key={step.id}
-              className={`text-xs text-center ${
-                index === currentStepIndex ? 'text-blue-600 font-medium' : 'text-muted-foreground'
-              }`}
+              className={`text-xs text-center ${index === currentStepIndex ? 'text-blue-600 font-medium' : 'text-muted-foreground'
+                }`}
               style={{ width: '80px' }}
             >
               {step.title}
@@ -1005,38 +1006,43 @@ export default function PatientAdmitPage() {
         <CardContent>
           {renderStepContent()}
         </CardContent>
-        {!['intake', 'medical-history', 'consent'].includes(currentStep.id) && (
-          <CardFooter className="flex justify-between border-t pt-4">
-            <Button
-              variant="outline"
-              onClick={handleBack}
-              disabled={currentStepIndex === 0}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Previous
+        <CardFooter className="flex justify-between border-t pt-4">
+          <Button
+            variant="outline"
+            onClick={handleBack}
+            disabled={currentStepIndex === 0}
+            className={currentStepIndex === 0 ? 'invisible' : ''}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Previous
+          </Button>
+
+          {['intake', 'medical-history', 'consent'].includes(currentStep.id) ? (
+            /* For questionnaire steps, the Next action is handled by the QuestionnaireRenderer's onSubmit */
+            /* We can optionally show a disabled Next button or nothing. 
+               Let's show nothing to avoid confusion, as the user must complete the form. */
+            <div />
+          ) : currentStep.id === 'review' ? (
+            <Button onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Complete Admission
+                </>
+              )}
             </Button>
-            {currentStep.id === 'review' ? (
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Check className="h-4 w-4 mr-2" />
-                    Complete Admission
-                  </>
-                )}
-              </Button>
-            ) : (
-              <Button onClick={handleNext}>
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
-          </CardFooter>
-        )}
+          ) : (
+            <Button onClick={handleNext}>
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          )}
+        </CardFooter>
       </Card>
     </div>
   )

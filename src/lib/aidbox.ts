@@ -28,7 +28,13 @@ function getAuthHeader(): string {
 
 // Legacy fetch function (kept for backward compatibility)
 export async function aidboxFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const url = `${AIDBOX_BASE_URL}${path}`
+  // Ensure path has proper format for FHIR endpoint
+  let fhirPath = path.startsWith('/') ? path : `/${path}`
+  // Add /fhir prefix if not already present
+  if (!fhirPath.startsWith('/fhir') && !fhirPath.startsWith('/Questionnaire') && !fhirPath.startsWith('/$')) {
+    fhirPath = `/fhir${fhirPath}`
+  }
+  const url = `${AIDBOX_BASE_URL}${fhirPath}`
   return fetch(url, {
     ...options,
     headers: {

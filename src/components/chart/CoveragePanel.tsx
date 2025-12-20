@@ -40,7 +40,7 @@ export function CoveragePanel({ patientId }: CoveragePanelProps) {
     }
 
     const getPayerName = (coverage: Coverage) => {
-        return coverage.payor?.[0]?.display || 'Unknown Payer'
+        return coverage.payor?.[0]?.display || 'Payer not documented'
     }
 
     const getRelationship = (coverage: Coverage) => {

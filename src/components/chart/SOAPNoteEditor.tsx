@@ -59,6 +59,7 @@ import {
   usePatientConditions,
   usePatientImaging,
 } from '@/hooks/useFHIRData'
+import { useCMISuggestions, type CMIDiagnosis } from '@/hooks/useCMISuggestions'
 import type { Observation, MedicationRequest, Condition, DiagnosticReport } from '@medplum/fhirtypes'
 
 interface ExistingNote {
@@ -102,36 +103,36 @@ interface CustomTextBlock {
 // Helper to transform FHIR vitals to display format
 function transformVitalsFromFHIR(vitals: Observation[]) {
   const getVitalValue = (code: string): number | null => {
-    const vital = vitals.find(v => 
+    const vital = vitals.find(v =>
       v.code?.coding?.some(c => c.code === code) ||
       v.code?.text?.toLowerCase().includes(code.toLowerCase())
     )
     return vital?.valueQuantity?.value ?? null
   }
-  
+
   const hr = getVitalValue('8867-4') ?? getVitalValue('heart')
   const sbp = getVitalValue('8480-6') ?? getVitalValue('systolic')
   const dbp = getVitalValue('8462-4') ?? getVitalValue('diastolic')
   const temp = getVitalValue('8310-5') ?? getVitalValue('temperature')
   const rr = getVitalValue('9279-1') ?? getVitalValue('respiratory')
   const spo2 = getVitalValue('2708-6') ?? getVitalValue('oxygen')
-  
+
   const map = sbp && dbp ? Math.round((sbp + 2 * dbp) / 3) : null
-  
+
   // Convert Celsius to Fahrenheit if needed
-  const tempF = temp ? (temp < 50 ? (temp * 9/5) + 32 : temp) : null
-  
+  const tempF = temp ? (temp < 50 ? (temp * 9 / 5) + 32 : temp) : null
+
   return {
-    latest: { 
-      time: 'Now', 
-      hr: hr ?? '--', 
-      sbp: sbp ?? '--', 
-      dbp: dbp ?? '--', 
-      map: map ?? '--', 
-      temp: tempF ? Math.round(tempF * 10) / 10 : '--', 
-      rr: rr ? Math.round(rr * 10) / 10 : '--', 
-      spo2: spo2 ? Math.round(spo2 * 10) / 10 : '--', 
-      fio2: 'RA' 
+    latest: {
+      time: 'Now',
+      hr: hr ?? '--',
+      sbp: sbp ?? '--',
+      dbp: dbp ?? '--',
+      map: map ?? '--',
+      temp: tempF ? Math.round(tempF * 10) / 10 : '--',
+      rr: rr ? Math.round(rr * 10) / 10 : '--',
+      spo2: spo2 ? Math.round(spo2 * 10) / 10 : '--',
+      fio2: 'RA'
     },
     // For min/max, we'd need historical data - using same values for now
     min24h: { hr: hr ?? '--', sbp: sbp ?? '--', temp: tempF ? Math.round(tempF * 10) / 10 : '--', rr: rr ?? '--', spo2: spo2 ? Math.round((spo2 - 5) * 10) / 10 : '--' },
@@ -147,13 +148,13 @@ function transformLabsFromFHIR(labs: Observation[]) {
     labs.forEach(lab => {
       const labCode = lab.code?.coding?.[0]?.code || ''
       const labDisplay = (lab.code?.text || lab.code?.coding?.[0]?.display || '').toLowerCase()
-      
+
       // Prefer exact LOINC code match if provided
       if (preferredCode && labCode === preferredCode) {
         matchingLabs.push(lab)
         return
       }
-      
+
       // Otherwise check search terms
       for (const term of searchTerms) {
         if (labCode === term || labDisplay.includes(term.toLowerCase())) {
@@ -164,12 +165,12 @@ function transformLabsFromFHIR(labs: Observation[]) {
     })
     return matchingLabs
   }
-  
+
   const formatLab = (searchTerms: string[], displayName: string, preferredCode?: string): { name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] } | null => {
     const matchingLabs = findLabs(searchTerms, preferredCode)
-    
+
     if (matchingLabs.length === 0) return null
-    
+
     // Sort by date (most recent first)
     const sortedLabs = matchingLabs
       .filter(lab => lab.valueQuantity?.value !== undefined)
@@ -178,21 +179,21 @@ function transformLabsFromFHIR(labs: Observation[]) {
         const dateB = new Date(b.effectiveDateTime || b.effectivePeriod?.start || 0).getTime()
         return dateB - dateA
       })
-    
+
     if (sortedLabs.length === 0) return null
-    
+
     // Get the most recent lab for current value
     const latestLab = sortedLabs[0]
     const value = latestLab.valueQuantity!.value!
     const unit = latestLab.valueQuantity?.unit || ''
     const interp = latestLab.interpretation?.[0]?.coding?.[0]?.code
-    
+
     // Build trend array: [Day 1, Day 2, Today]
     // sortedLabs is sorted newest first, so we need to reverse for chronological order
     const trendLabs = sortedLabs.slice(0, 3).reverse() // Now oldest to newest
     const trend: number[] = []
     const dates: string[] = []
-    
+
     // Always create array with 3 elements for table display
     if (trendLabs.length >= 3) {
       // We have 3+ days of data - use the 3 most recent
@@ -213,7 +214,7 @@ function transformLabsFromFHIR(labs: Observation[]) {
       trend.push(Math.round(value * 10) / 10) // Today
       dates.push('Day 1', 'Day 2', 'Today')
     }
-    
+
     return {
       name: displayName,
       value: Math.round(value * 10) / 10,
@@ -223,14 +224,14 @@ function transformLabsFromFHIR(labs: Observation[]) {
       dates: dates.length > 0 ? dates : ['Today']
     }
   }
-  
+
   const cbcLabs = [
     formatLab(['6690-2', 'wbc', 'leukocytes'], 'WBC', '6690-2'),
     formatLab(['718-7', 'hemoglobin', 'hgb'], 'Hgb', '718-7'),
     formatLab(['4544-3', 'hematocrit', 'hct'], 'Hct', '4544-3'),
     formatLab(['777-3', 'platelet', 'plt'], 'Plt', '777-3'),
   ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
-  
+
   const cmpLabs = [
     formatLab(['2951-2', 'sodium', 'na'], 'Na', '2951-2'),
     formatLab(['2823-3', 'potassium', 'k'], 'K', '2823-3'),
@@ -240,18 +241,18 @@ function transformLabsFromFHIR(labs: Observation[]) {
     formatLab(['2160-0', 'creatinine', 'cr'], 'Cr', '2160-0'),
     formatLab(['2345-7', 'glucose', 'gluc'], 'Glucose', '2345-7'),
   ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
-  
+
   const cardiacLabs = [
     formatLab(['6598-7', 'troponin'], 'Troponin', '6598-7'),
     formatLab(['42637-9', 'bnp', 'natriuretic'], 'BNP', '42637-9'),
   ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
-  
+
   const mineralLabs = [
     formatLab(['19123-9', 'magnesium', 'mg'], 'Mg', '19123-9'),
     formatLab(['2777-1', 'phosph', 'phos'], 'Phos', '2777-1'),
     formatLab(['17861-6', 'calcium', 'ca'], 'Ca', '17861-6'),
   ].filter(Boolean) as Array<{ name: string; value: number | string; unit: string; flag?: string; trend: number[]; dates: string[] }>
-  
+
   return {
     CBC: cbcLabs,
     CMP: cmpLabs,
@@ -273,15 +274,15 @@ function transformImagingFromFHIR(imaging: DiagnosticReport[]) {
 // Helper to transform FHIR medications to display format
 function transformMedsFromFHIR(inpatientMeds: MedicationRequest[], homeMeds: any[]) {
   const formatMed = (med: any, isHome: boolean): any => {
-    const name = med.medicationCodeableConcept?.text || 
-                 med.medicationCodeableConcept?.coding?.[0]?.display || 
-                 'Unknown medication'
+    const name = med.medicationCodeableConcept?.text ||
+      med.medicationCodeableConcept?.coding?.[0]?.display ||
+      'Unknown medication'
     const dosage = med.dosageInstruction?.[0] || med.dosage?.[0]
     const dose = dosage?.doseAndRate?.[0]?.doseQuantity?.value || ''
     const unit = dosage?.doseAndRate?.[0]?.doseQuantity?.unit || ''
     const route = dosage?.route?.coding?.[0]?.display || dosage?.route?.text || ''
     const freq = dosage?.timing?.code?.coding?.[0]?.display || dosage?.timing?.code?.text || ''
-    
+
     return {
       id: med.id || Math.random().toString(),
       name,
@@ -294,7 +295,7 @@ function transformMedsFromFHIR(inpatientMeds: MedicationRequest[], homeMeds: any
       lastGiven: med.authoredOn ? new Date(med.authoredOn) : undefined
     }
   }
-  
+
   return [
     ...homeMeds.map(m => formatMed(m, true)),
     ...inpatientMeds.map(m => formatMed(m, false))
@@ -303,17 +304,17 @@ function transformMedsFromFHIR(inpatientMeds: MedicationRequest[], homeMeds: any
 
 // Helper to transform FHIR conditions to A/P recommendations
 function transformConditionsToAP(conditions: Condition[], labs: Observation[], vitals: Observation[]): APRecommendation[] {
-  const activeConditions = conditions.filter(c => 
+  const activeConditions = conditions.filter(c =>
     c.clinicalStatus?.coding?.[0]?.code === 'active'
   ).slice(0, 8)
-  
+
   return activeConditions.map((cond, i) => {
     const name = cond.code?.text || cond.code?.coding?.[0]?.display || 'Unknown condition'
     const icd = cond.code?.coding?.[0]?.code || ''
-    
+
     // Generate supporting data based on condition type
     const supportingData: SupportingData[] = []
-    
+
     // Add relevant lab data
     const relevantLabs = labs.slice(0, 2)
     relevantLabs.forEach(lab => {
@@ -328,7 +329,7 @@ function transformConditionsToAP(conditions: Condition[], labs: Observation[], v
         })
       }
     })
-    
+
     return {
       id: cond.id || `${i}`,
       problem: name,
@@ -723,12 +724,12 @@ Abdomen: Soft, NT, ND, +BS, no HSM
 Extremities: No edema, 2+ pulses, warm and well perfused
 Neuro: A&Ox3, CN II-XII intact, 5/5 strength, sensation intact
 Skin: Warm, dry, no rashes`,
-  
+
   'labs': `LABS (3-day trends):
   CBC: [Lab values from FHIR data will be inserted here]
   CMP: [Lab values from FHIR data will be inserted here]
   Cardiac: [Lab values from FHIR data will be inserted here]`,
-  
+
   'heartfailure': `Heart Failure (HFrEF/HFpEF):
   - EF: ***%*** (***date of echo***)
   - Volume status: ***euvolemic/hypervolemic/hypovolemic***
@@ -742,7 +743,7 @@ Skin: Warm, dry, no rashes`,
   - Daily weights, 2L fluid restriction
   - Low sodium diet
   - Follow-up: ***CHF clinic/cardiology***`,
-  
+
   'copd': `COPD Exacerbation:
   - Severity: ***mild/moderate/severe***
   - O2 requirement: ***current O2 and baseline***
@@ -751,7 +752,7 @@ Skin: Warm, dry, no rashes`,
   - Antibiotics (if indicated): ***regimen***
   - Smoking status: ***current/former/never***
   - PFTs: ***date and results if available***`,
-  
+
   'aki': `Acute Kidney Injury:
   - Baseline Cr: ***value*** Current Cr: ***value***
   - Etiology: ***prerenal/intrinsic/postrenal***
@@ -761,7 +762,7 @@ Skin: Warm, dry, no rashes`,
   - Contrast: ***date if recent***
   - Renal US: ***pending/results***
   - Renal consulted: ***yes/no***`,
-  
+
   'sepsis': `Sepsis/Infectious Workup:
   - Source: ***suspected source***
   - Cultures: Blood x2 (***pending/results***), Urine (***pending/results***), Sputum (***pending/results***)
@@ -1000,39 +1001,42 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const [isGenerating, setIsGenerating] = useState(false)
   const [showBilling, setShowBilling] = useState(false)
   const [billingCode, setBillingCode] = useState<string>('')
-  
+
   // Fetch real FHIR data
   const { data: fhirVitals = [] } = usePatientVitals(patientId)
   const { data: fhirLabs = [] } = usePatientLabs(patientId)
   const { data: fhirConditions = [] } = usePatientConditions(patientId)
   const { data: fhirImaging = [] } = usePatientImaging(patientId)
   const { inpatientMedications = [], homeMedications = [] } = usePatientMedications(patientId)
-  
+
+  // Fetch AI-powered CMI suggestions
+  const { data: cmiSuggestionsData, isLoading: cmiLoading } = useCMISuggestions(patientId)
+
   // Transform FHIR data to display format - NO MOCK DATA FALLBACKS
   const vitalsData = fhirVitals.length > 0 ? transformVitalsFromFHIR(fhirVitals) : defaultVitalsData
   const labsData: Record<string, Array<{ name: string; value: string | number; unit?: string; flag?: string; trend: number[] }>> = fhirLabs.length > 0 ? transformLabsFromFHIR(fhirLabs) : {}
   const imagingData = fhirImaging.length > 0 ? transformImagingFromFHIR(fhirImaging) : []
   const medicationsData = transformMedsFromFHIR(inpatientMedications, homeMedications)
-  const apRecommendations = fhirConditions.length > 0 
-    ? transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals) 
+  const apRecommendations = fhirConditions.length > 0
+    ? transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
     : []
-  
+
   // Custom text blocks
   const [customBlocks, setCustomBlocks] = useState<CustomTextBlock[]>([])
-  
+
   // Snippet suggestion state
   const [snippetSuggestions, setSnippetSuggestions] = useState<string[]>([])
   const [activeSnippetField, setActiveSnippetField] = useState<string | null>(null)
   const [snippetCursorPos, setSnippetCursorPos] = useState<number>(0)
-  
+
   // Refs for text areas to handle F2 navigation
   const textAreaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
-  
+
   // Check for *** placeholders in note content
   const hasPlaceholders = useCallback((content: string) => {
     return content.includes('***')
   }, [])
-  
+
   // Find all *** positions in content
   const findPlaceholderPositions = useCallback((content: string): number[] => {
     const positions: number[] = []
@@ -1043,21 +1047,21 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     }
     return positions
   }, [])
-  
+
   // Handle snippet detection and insertion
   const handleTextChange = useCallback((
-    value: string, 
-    setter: (v: string) => void, 
+    value: string,
+    setter: (v: string) => void,
     fieldId: string,
     cursorPos: number
   ) => {
     // Check for ..snippet pattern
     const beforeCursor = value.slice(0, cursorPos)
     const snippetMatch = beforeCursor.match(/\.\.(\w+)$/)
-    
+
     if (snippetMatch) {
       const searchTerm = snippetMatch[1].toLowerCase()
-      const matches = Object.keys(textSnippets).filter(key => 
+      const matches = Object.keys(textSnippets).filter(key =>
         key.toLowerCase().startsWith(searchTerm)
       )
       if (matches.length > 0) {
@@ -1070,10 +1074,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     } else {
       setSnippetSuggestions([])
     }
-    
+
     setter(value)
   }, [])
-  
+
   // Insert snippet into text
   const insertSnippet = useCallback((
     snippetKey: string,
@@ -1083,7 +1087,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   ) => {
     const beforeCursor = currentValue.slice(0, snippetCursorPos)
     const afterCursor = currentValue.slice(snippetCursorPos)
-    
+
     // Find the ..phrase pattern and replace it
     const snippetMatch = beforeCursor.match(/\.\.(\w+)$/)
     if (snippetMatch) {
@@ -1091,11 +1095,11 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       const snippetContent = textSnippets[snippetKey] || ''
       setter(newBeforeCursor + snippetContent + afterCursor)
     }
-    
+
     setSnippetSuggestions([])
     setActiveSnippetField(null)
   }, [snippetCursorPos])
-  
+
   // Handle F2 key for jumping between placeholders
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1107,14 +1111,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           const content = activeElement.value
           const currentPos = activeElement.selectionStart || 0
           const positions = findPlaceholderPositions(content)
-          
+
           if (positions.length > 0) {
             // Find next placeholder after current position
             let nextPos = positions.find(p => p > currentPos)
             if (nextPos === undefined) {
               nextPos = positions[0] // Wrap around
             }
-            
+
             // Find the end of this placeholder (next ***)
             const endPos = content.indexOf('***', nextPos + 3)
             if (endPos !== -1) {
@@ -1127,39 +1131,39 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
         }
       }
     }
-    
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [findPlaceholderPositions])
-  
+
   // Parse existing note content to extract subjective section
   const parseExistingSubjective = (content: string): string => {
     const subjectiveMatch = content.match(/SUBJECTIVE[:\s]*\n?([\s\S]*?)(?=\n\s*OBJECTIVE|\n\s*$)/i)
     return subjectiveMatch ? subjectiveMatch[1].trim() : 'Patient reports improved breathing. Slept well overnight. Denies chest pain, palpitations. Leg swelling improved. Good appetite.'
   }
-  
+
   // Parse existing note content to extract A/P section problems
   const parseExistingAP = (content: string): APRecommendation[] => {
     const apMatch = content.match(/ASSESSMENT\s*[&]\s*PLAN[:\s]*\n([\s\S]*?)(?=\n\s*DIET:|\n\s*PROPHYLAXIS:|\n\s*DISPOSITION:|\n\s*$)/i)
     if (!apMatch) return []
-    
+
     const apContent = apMatch[1]
     const problems: APRecommendation[] = []
-    
+
     // Match numbered problems like "1. Problem Name"
     const problemMatches = apContent.matchAll(/(\d+)\.\s*([^\n]+)\n([\s\S]*?)(?=\n\d+\.|$)/g)
-    
+
     for (const match of Array.from(problemMatches)) {
       const problemName = match[2].trim()
       const problemContent = match[3]
-      
+
       // Extract recommendations (lines starting with -)
       const recMatches = problemContent.matchAll(/\s+-\s*([^\n]+)/g)
       const recs: string[] = []
       for (const recMatch of Array.from(recMatches)) {
         recs.push(recMatch[1].trim())
       }
-      
+
       // Extract supporting data if present
       const dataMatch = problemContent.match(/Data:\s*([^\n]+)/i)
       const supportingData: SupportingData[] = []
@@ -1172,7 +1176,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           }
         })
       }
-      
+
       problems.push({
         id: `parsed-${problems.length + 1}`,
         problem: problemName,
@@ -1181,18 +1185,18 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
         status: 'accepted', // Mark as accepted since they were already in the saved note
       })
     }
-    
+
     return problems
   }
-  
+
   // Form state - initialize from existingNote if provided, otherwise empty with ***
-  const [subjective, setSubjective] = useState(() => 
+  const [subjective, setSubjective] = useState(() =>
     existingNote?.content ? parseExistingSubjective(existingNote.content) : '***'
   )
-  
+
   // Store original content for re-editing
   const [originalContent, setOriginalContent] = useState<string | null>(existingNote?.content || null)
-  
+
   // Track if we've initialized from existing note
   const [hasInitializedFromExisting, setHasInitializedFromExisting] = useState(false)
   const [uop, setUop] = useState({ intake: 1200, output: 2400, net: -1200 })
@@ -1219,7 +1223,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const [expandedProblems, setExpandedProblems] = useState<Set<string>>(new Set())
   const [editingProblem, setEditingProblem] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
-  
+
   // ICU options
   const [hasVent, setHasVent] = useState(false)
   const [ventSettings, setVentSettings] = useState('AC/VC TV 450, RR 14, PEEP 5, FiO2 40%')
@@ -1227,37 +1231,37 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const [pumpSettings, setPumpSettings] = useState('IABP 1:1')
   const [hasSwanGanz, setHasSwanGanz] = useState(false)
   const [swanSettings, setSwanSettings] = useState('CI 2.4, SVR 1200, CVP 12, PAWP 18')
-  
+
   // DVT Prophylaxis state
   const [dvtPpxSelected, setDvtPpxSelected] = useState<string[]>(['heparin'])
   const [dvtContraSelected, setDvtContraSelected] = useState<string[]>([])
   const [currentAnticoag, setCurrentAnticoag] = useState('none')
-  
+
   // Diet state
   const [selectedDiets, setSelectedDiets] = useState<string[]>(['cardiac', 'diabetic'])
   const [fluidRestriction, setFluidRestriction] = useState('2L')
-  
+
   // Disposition state
   const [dispoDestination, setDispoDestination] = useState('home')
   const [includePTNote, setIncludePTNote] = useState(true)
   const [includeOTNote, setIncludeOTNote] = useState(true)
   const [includeCMNote, setIncludeCMNote] = useState(true)
-  
+
   // Medical equipment state
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>(['walker', 'shower_chair'])
   const [generatedMedicareBlurb, setGeneratedMedicareBlurb] = useState<Record<string, string>>({})
-  
+
   // Inline orders from A/P (orders placed while editing note)
   const [inlineOrders, setInlineOrders] = useState<Array<{ problemId: string; orders: string[] }>>([])
   const [showInlineOrderPicker, setShowInlineOrderPicker] = useState<string | null>(null)
-  
+
   // Electrolyte replete state
   const [selectedRepletes, setSelectedRepletes] = useState<string[]>([])
-  
+
   // CMI / Billing state - initialize from FHIR conditions
   const [selectedDiagnoses, setSelectedDiagnoses] = useState<string[]>([])
   const [showBillingPanel, setShowBillingPanel] = useState(false)
-  
+
   // Update selected diagnoses from FHIR conditions when they load
   useEffect(() => {
     if (fhirConditions.length > 0 && selectedDiagnoses.length === 0) {
@@ -1266,7 +1270,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
         .filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active')
         .map(c => {
           // Try to find ICD-10 code in coding array
-          const icdCoding = c.code?.coding?.find(coding => 
+          const icdCoding = c.code?.coding?.find(coding =>
             coding.system?.includes('icd-10') || coding.system?.includes('ICD10') || coding.system?.includes('icd10')
           )
           return icdCoding?.code || ''
@@ -1277,11 +1281,11 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       }
     }
   }, [fhirConditions, selectedDiagnoses.length])
-  
+
   // Section ordering - default order of sections
   const defaultSectionOrder = ['subjective', 'objective', 'labs', 'medications', 'imaging', 'ap', 'diet', 'dvt', 'disposition', 'equipment', 'cmi']
   const [sectionOrder, setSectionOrder] = useState<string[]>(defaultSectionOrder)
-  
+
   // Collapsed sections
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
 
@@ -1292,53 +1296,53 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       return n
     })
   }
-  
+
   // Inline order helpers (ordering from A/P section)
   const addInlineOrder = (problemId: string, orderName: string) => {
     setInlineOrders(prev => {
       const existing = prev.find(o => o.problemId === problemId)
       if (existing) {
-        return prev.map(o => o.problemId === problemId 
-          ? { ...o, orders: [...o.orders, orderName] } 
+        return prev.map(o => o.problemId === problemId
+          ? { ...o, orders: [...o.orders, orderName] }
           : o)
       }
       return [...prev, { problemId, orders: [orderName] }]
     })
   }
-  
+
   const removeInlineOrder = (problemId: string, orderName: string) => {
-    setInlineOrders(prev => prev.map(o => 
-      o.problemId === problemId 
+    setInlineOrders(prev => prev.map(o =>
+      o.problemId === problemId
         ? { ...o, orders: o.orders.filter(ord => ord !== orderName) }
         : o
     ).filter(o => o.orders.length > 0))
   }
-  
+
   const getOrdersForProblem = (problemId: string) => {
     return inlineOrders.find(o => o.problemId === problemId)?.orders || []
   }
-  
+
   // Section reordering helpers
   const moveSectionUp = (sectionId: string) => {
     setSectionOrder(prev => {
       const idx = prev.indexOf(sectionId)
       if (idx <= 0) return prev
       const newOrder = [...prev]
-      ;[newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]]
+        ;[newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]]
       return newOrder
     })
   }
-  
+
   const moveSectionDown = (sectionId: string) => {
     setSectionOrder(prev => {
       const idx = prev.indexOf(sectionId)
       if (idx === -1 || idx >= prev.length - 1) return prev
       const newOrder = [...prev]
-      ;[newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]]
+        ;[newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]]
       return newOrder
     })
   }
-  
+
   // Electrolyte replete helpers
   const electrolyteRepletes = [
     { id: 'k_oral', name: 'KCl 40mEq PO x1', electrolyte: 'K', threshold: 3.5 },
@@ -1349,7 +1353,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     { id: 'phos_iv', name: 'NaPhos 15mmol IV x1', electrolyte: 'Phos', threshold: 2.0 },
     { id: 'ca_oral', name: 'CaCO3 1000mg PO x1', electrolyte: 'Ca', threshold: 8.5 },
   ]
-  
+
   // Check for low electrolytes from labs
   const allLabs = Object.values(labsData).flat() as Array<{ name: string; value: string | number; unit?: string }>
   const lowElectrolytes = allLabs.filter(lab => {
@@ -1361,24 +1365,24 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     if (lab.name === 'Ca' && val < 8.5) return true
     return false
   })
-  
+
   const toggleReplete = (repleteId: string) => {
-    setSelectedRepletes(prev => 
+    setSelectedRepletes(prev =>
       prev.includes(repleteId) ? prev.filter(r => r !== repleteId) : [...prev, repleteId]
     )
   }
-  
+
   // Section header with reorder buttons
   const renderSectionHeader = (
-    sectionId: string, 
-    icon: React.ReactNode, 
-    title: string, 
+    sectionId: string,
+    icon: React.ReactNode,
+    title: string,
     badge?: React.ReactNode
   ) => {
     const idx = sectionOrder.indexOf(sectionId)
     const isFirst = idx === 0
     const isLast = idx === sectionOrder.length - 1
-    
+
     return (
       <div className="w-full px-4 py-2 flex items-center gap-2 bg-slate-100 hover:bg-slate-200">
         <button onClick={() => toggleSection(sectionId)} className="flex items-center gap-2 flex-1 text-left">
@@ -1388,16 +1392,16 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           {badge}
         </button>
         <div className="flex items-center gap-1 opacity-50 hover:opacity-100">
-          <button 
-            onClick={(e) => { e.stopPropagation(); moveSectionUp(sectionId); }} 
+          <button
+            onClick={(e) => { e.stopPropagation(); moveSectionUp(sectionId); }}
             disabled={isFirst}
             className={`p-0.5 rounded hover:bg-slate-300 ${isFirst ? 'opacity-30 cursor-not-allowed' : ''}`}
             title="Move section up"
           >
             <ArrowUp className="h-3 w-3" />
           </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); moveSectionDown(sectionId); }} 
+          <button
+            onClick={(e) => { e.stopPropagation(); moveSectionDown(sectionId); }}
             disabled={isLast}
             className={`p-0.5 rounded hover:bg-slate-300 ${isLast ? 'opacity-30 cursor-not-allowed' : ''}`}
             title="Move section down"
@@ -1408,14 +1412,14 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       </div>
     )
   }
-  
+
   // CMI helpers
   const toggleDiagnosis = (code: string) => {
-    setSelectedDiagnoses(prev => 
+    setSelectedDiagnoses(prev =>
       prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
     )
   }
-  
+
   const addDiagnosisToNote = (diagnosis: Diagnosis) => {
     // Add diagnosis to recommendations if not already there
     const existingRec = recommendations.find(r => r.problem.includes(diagnosis.code))
@@ -1434,7 +1438,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       setSelectedDiagnoses(prev => [...prev, diagnosis.code])
     }
   }
-  
+
   const addCustomBlock = (afterSection: string) => {
     setCustomBlocks(prev => [...prev, { id: `block-${Date.now()}`, afterSection, content: '' }])
   }
@@ -1518,7 +1522,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   }
 
   const saveEdit = (id: string) => {
-    setRecommendations(prev => prev.map(r => 
+    setRecommendations(prev => prev.map(r =>
       r.id === id ? { ...r, status: 'edited', editedContent: editText, recommendations: editText.split('\n').filter(l => l.trim()) } : r
     ))
     setEditingProblem(null)
@@ -1532,36 +1536,36 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
 
   // Check if DVT prophylaxis is addressed
   const isDvtAddressed = dvtPpxSelected.length > 0 || currentAnticoag !== 'none' || dvtContraSelected.length > 0
-  
+
   // Generate Medicare justification for equipment
   const generateMedicareBlurb = (equipmentId: string) => {
     const equipment = medicalEquipmentOptions.find(e => e.id === equipmentId)
     if (!equipment) return
-    
+
     // Get real patient conditions from FHIR
     const patientConditions = fhirConditions.length > 0
       ? fhirConditions.map(c => c.code?.text || c.code?.coding?.[0]?.display || 'Unknown').join(', ')
       : 'No active conditions documented'
-    
+
     // PT/OT/ST notes would come from FHIR Task or DocumentReference resources
     // For now, use generic functional status description
     const functionalStatus = 'Patient functional status per therapy evaluation'
     const therapyDate = 'Per recent therapy evaluation'
-    
+
     const blurbs: Record<string, string> = {
       walker: `Medicare Justification for Rolling Walker:\n\nPatient is a ${patientConditions.includes('heart failure') ? '65+ year old' : ''} individual with ${patientConditions}. ${therapyDate}, ${functionalStatus}. The patient demonstrates impaired balance and mobility requiring assistive device for safe ambulation. Without a rolling walker, patient is at high risk for falls and injury. The rolling walker is medically necessary to enable safe ambulation within the home and community, reducing fall risk and preventing hospital readmission.`,
-      
+
       shower_chair: `Medicare Justification for Shower Chair:\n\nPatient has ${patientConditions} with documented functional limitations including decreased exercise tolerance and lower extremity weakness/edema. Per OT evaluation, patient has difficulty with prolonged standing required for bathing. A shower chair is medically necessary to allow safe bathing while seated, preventing falls in a wet environment and reducing cardiac workload during ADLs.`,
-      
+
       commode: `Medicare Justification for Bedside Commode:\n\nPatient with ${patientConditions} has documented decreased mobility and exercise intolerance. Ambulation to bathroom, particularly at night, poses significant fall risk. A bedside commode is medically necessary to provide safe toileting, especially during nighttime when fall risk is highest, and to reduce cardiac demand associated with ambulation.`,
-      
+
       oxygen: `Medicare Justification for Home Oxygen:\n\nPatient with ${patientConditions} demonstrates hypoxemia with SpO2 < 88% on room air during ambulation. Qualifying blood gas/oximetry results are documented in the medical record. Continuous supplemental oxygen is medically necessary to maintain adequate tissue oxygenation, prevent hypoxia-related complications, and enable safe mobility.`,
-      
+
       hospital_bed: `Medicare Justification for Hospital Bed:\n\nPatient with ${patientConditions} requires elevation of head of bed for management of orthopnea and paroxysmal nocturnal dyspnea associated with heart failure. A hospital bed with adjustable head/foot positioning is medically necessary to optimize respiratory status, reduce pulmonary congestion, and enable safe transfers.`,
     }
-    
+
     const defaultBlurb = `Medicare Justification for ${equipment.name}:\n\nPatient with ${patientConditions} requires ${equipment.name.toLowerCase()} based on functional assessment and medical necessity. This equipment is essential for safe home discharge and to prevent complications/readmission.`
-    
+
     setGeneratedMedicareBlurb(prev => ({
       ...prev,
       [equipmentId]: blurbs[equipmentId] || defaultBlurb
@@ -1571,7 +1575,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
   const buildNote = () => {
     let content = `SUBJECTIVE:\n${subjective}\n`
     customBlocks.filter(b => b.afterSection === 'subjective').forEach(b => { content += `\n${b.content}\n` })
-    
+
     content += `\nOBJECTIVE:\n`
     content += `Vitals (Latest): HR ${vitalsData.latest.hr}, BP ${vitalsData.latest.sbp}/${vitalsData.latest.dbp} (MAP ${vitalsData.latest.map}), T ${vitalsData.latest.temp}°F, RR ${vitalsData.latest.rr}, SpO2 ${vitalsData.latest.spo2}% on ${vitalsData.latest.fio2}L NC\n`
     content += `24h Ranges: HR ${vitalsData.min24h.hr}-${vitalsData.max24h.hr}, SBP ${vitalsData.min24h.sbp}-${vitalsData.max24h.sbp}, Temp ${vitalsData.min24h.temp}-${vitalsData.max24h.temp}\n`
@@ -1582,7 +1586,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     if (hasPump) content += `Pump: ${pumpSettings}\n`
     if (hasSwanGanz) content += `Swan-Ganz: ${swanSettings}\n`
     customBlocks.filter(b => b.afterSection === 'objective').forEach(b => { content += `\n${b.content}\n` })
-    
+
     content += `\nLABS (3-day trends):\n`
     selectedLabs.forEach(panel => {
       const labs = labsData[panel as keyof typeof labsData]
@@ -1596,13 +1600,13 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       }
     })
     customBlocks.filter(b => b.afterSection === 'labs').forEach(b => { content += `\n${b.content}\n` })
-    
+
     content += `\nIMAGING:\n`
     imagingData.filter(i => selectedImaging.includes(i.type)).forEach(i => {
       content += `  ${i.type} (${i.date}): ${i.finding}\n`
     })
     customBlocks.filter(b => b.afterSection === 'imaging').forEach(b => { content += `\n${b.content}\n` })
-    
+
     content += `\nASSESSMENT & PLAN:\n`
     recommendations.filter(r => r.status === 'accepted' || r.status === 'edited').forEach((r, i) => {
       content += `\n${i + 1}. ${r.problem}\n`
@@ -1612,13 +1616,13 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       r.recommendations.forEach(rec => { content += `   - ${rec}\n` })
     })
     customBlocks.filter(b => b.afterSection === 'assessment').forEach(b => { content += `\n${b.content}\n` })
-    
+
     // Diet
     content += `\nDIET:\n`
     const dietNames = selectedDiets.map(d => dietOptions.find(o => o.id === d)?.name).filter(Boolean)
     content += `  ${dietNames.join(', ')}\n`
     if (fluidRestriction) content += `  Fluid restriction: ${fluidRestriction}\n`
-    
+
     // DVT Prophylaxis
     content += `\nPROPHYLAXIS:\n`
     if (currentAnticoag !== 'none') {
@@ -1636,7 +1640,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       content += `  DVT ppx: ${ppxNames.join(', ')}\n`
     }
     content += `  GI ppx: Famotidine 20mg daily\n`
-    
+
     // Disposition
     content += `\nDISPOSITION:\n`
     content += `  Discharge destination: ${dispoDestination === 'home' ? 'Home' : dispoDestination === 'snf' ? 'SNF' : dispoDestination === 'rehab' ? 'Acute Rehab' : 'LTACH'}\n`
@@ -1651,7 +1655,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     if (includeCMNote) {
       content += `  CM: [Case management plan]\n`
     }
-    
+
     // Equipment
     if (selectedEquipment.length > 0) {
       content += `\nDME ORDERED:\n`
@@ -1666,7 +1670,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
         }
       })
     }
-    
+
     return content
   }
 
@@ -1682,7 +1686,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     }
     onSave({ type: 'Progress Note', service: 'Hospitalist', content: noteContent, billingCodes: billingCode ? [billingCode] : undefined }, status)
   }
-  
+
   // Format medication last given time
   const formatLastGiven = (date?: Date) => {
     if (!date) return 'Not given'
@@ -1694,7 +1698,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     if (hours < 24) return `${hours}h ${mins}m ago`
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
-  
+
   // Sort medications by added date (newest first) - USE REAL FHIR DATA
   const sortedMedications = [...medicationsData].sort((a, b) => b.addedDate.getTime() - a.addedDate.getTime())
   const scheduledMeds = sortedMedications.filter(m => m.category === 'scheduled')
@@ -1707,7 +1711,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     try {
       // Build note content for AI analysis
       const noteContent = buildNote()
-      
+
       // Prepare FHIR data for AI
       const patientData = {
         noteContent,
@@ -1809,22 +1813,22 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
       </button>
     </>
   )
-  
+
   // State for medication orders
   const [medOrders, setMedOrders] = useState<string[]>([])
-  
+
   const toggleMedOrder = (medId: string, medName: string, medDetails: string) => {
     const orderStr = `${medName} ${medDetails}`
-    setMedOrders(prev => 
+    setMedOrders(prev =>
       prev.includes(orderStr) ? prev.filter(o => o !== orderStr) : [...prev, orderStr]
     )
   }
-  
+
   // Render a single medication row with order button
   const renderMedRow = (med: Medication) => {
     const orderStr = `${med.name} ${med.dose} ${med.route} ${med.frequency}`
     const isOrdered = medOrders.includes(orderStr)
-    
+
     return (
       <div key={med.id} className="flex items-center justify-between py-1.5 px-2 hover:bg-slate-50 border-b last:border-b-0">
         <div className="flex-1">
@@ -1846,11 +1850,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           </div>
           <button
             onClick={() => toggleMedOrder(med.id, med.name, `${med.dose} ${med.route} ${med.frequency}`)}
-            className={`px-2 py-1 text-xs border rounded ${
-              isOrdered 
-                ? 'bg-green-100 border-green-400 text-green-800' 
-                : 'bg-white hover:bg-blue-50 border-slate-300'
-            }`}
+            className={`px-2 py-1 text-xs border rounded ${isOrdered
+              ? 'bg-green-100 border-green-400 text-green-800'
+              : 'bg-white hover:bg-blue-50 border-slate-300'
+              }`}
             title={isOrdered ? 'Remove order' : 'Order this medication'}
           >
             {isOrdered ? <Check className="h-3 w-3" /> : <ShoppingCart className="h-3 w-3" />}
@@ -1981,10 +1984,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 <div className="text-sm font-medium mb-2 flex items-center gap-2"><Droplets className="h-4 w-4" /> I/O (24h)</div>
                 <div className="flex gap-4">
                   <div><label className="text-xs text-muted-foreground">Intake (mL)</label>
-                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.intake} onChange={e => setUop({...uop, intake: +e.target.value, net: +e.target.value - uop.output})} />
+                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.intake} onChange={e => setUop({ ...uop, intake: +e.target.value, net: +e.target.value - uop.output })} />
                   </div>
                   <div><label className="text-xs text-muted-foreground">Output (mL)</label>
-                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.output} onChange={e => setUop({...uop, output: +e.target.value, net: uop.intake - +e.target.value})} />
+                    <input type="number" className="w-24 px-2 py-1 border rounded text-sm bg-white" value={uop.output} onChange={e => setUop({ ...uop, output: +e.target.value, net: uop.intake - +e.target.value })} />
                   </div>
                   <div><label className="text-xs text-muted-foreground">Net (mL)</label>
                     <div className={`w-24 px-2 py-1 border rounded text-sm font-medium ${uop.net < 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>{uop.net > 0 ? '+' : ''}{uop.net}</div>
@@ -1999,7 +2002,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   {Object.entries(exam).map(([k, v]) => (
                     <div key={k}>
                       <label className="text-xs text-muted-foreground capitalize">{k}</label>
-                      <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={v} onChange={e => setExam({...exam, [k]: e.target.value})} />
+                      <input className="w-full px-2 py-1 border rounded text-sm bg-white" value={v} onChange={e => setExam({ ...exam, [k]: e.target.value })} />
                     </div>
                   ))}
                 </div>
@@ -2091,11 +2094,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                               <button
                                 key={replete.id}
                                 onClick={() => toggleReplete(replete.id)}
-                                className={`px-2 py-1 text-xs border rounded ${
-                                  selectedRepletes.includes(replete.id)
-                                    ? 'bg-green-100 border-green-400 text-green-800'
-                                    : 'bg-white hover:bg-amber-100 border-amber-300'
-                                }`}
+                                className={`px-2 py-1 text-xs border rounded ${selectedRepletes.includes(replete.id)
+                                  ? 'bg-green-100 border-green-400 text-green-800'
+                                  : 'bg-white hover:bg-amber-100 border-amber-300'
+                                  }`}
                               >
                                 {selectedRepletes.includes(replete.id) && <Check className="h-3 w-3 inline mr-1" />}
                                 {replete.name}
@@ -2115,7 +2117,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   )}
                 </div>
               )}
-              
+
               {renderCustomBlocks('labs')}
             </div>
           )}
@@ -2138,7 +2140,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 Medications sorted by date added (newest first). Click <ShoppingCart className="h-3 w-3 inline" /> to order.
                 <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 ml-1"><Home className="h-2 w-2 mr-0.5" />Home</Badge> = home medication
               </div>
-              
+
               {/* Home Medications Summary */}
               <div className="bg-blue-50 border border-blue-200 rounded p-3">
                 <div className="font-medium text-sm text-blue-800 mb-2 flex items-center gap-2">
@@ -2150,7 +2152,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   ))}
                 </div>
               </div>
-              
+
               {/* IV Drips */}
               {ivDrips.length > 0 && (
                 <div>
@@ -2162,7 +2164,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   </div>
                 </div>
               )}
-              
+
               {/* Scheduled Medications */}
               <div>
                 <div className="font-medium text-sm mb-2 flex items-center gap-2 text-green-700">
@@ -2172,7 +2174,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   {scheduledMeds.map(med => renderMedRow(med))}
                 </div>
               </div>
-              
+
               {/* PRN Medications */}
               <div>
                 <div className="font-medium text-sm mb-2 flex items-center gap-2 text-amber-700">
@@ -2182,7 +2184,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   {prnMeds.map(med => renderMedRow(med))}
                 </div>
               </div>
-              
+
               {/* Medication Orders Summary */}
               {medOrders.length > 0 && (
                 <div className="bg-green-50 border border-green-200 rounded p-3">
@@ -2266,12 +2268,11 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                                 <div className="text-xs font-medium text-slate-500 mb-1">Supporting Data:</div>
                                 <div className="flex flex-wrap gap-2">
                                   {rec.supportingData.map((data, i) => (
-                                    <span key={i} className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full ${
-                                      data.type === 'lab' ? 'bg-purple-100 text-purple-800' :
+                                    <span key={i} className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full ${data.type === 'lab' ? 'bg-purple-100 text-purple-800' :
                                       data.type === 'vital' ? 'bg-blue-100 text-blue-800' :
-                                      data.type === 'imaging' ? 'bg-amber-100 text-amber-800' :
-                                      'bg-green-100 text-green-800'
-                                    }`}>
+                                        data.type === 'imaging' ? 'bg-amber-100 text-amber-800' :
+                                          'bg-green-100 text-green-800'
+                                      }`}>
                                       <span className="font-medium">{data.label}:</span>
                                       <span className="ml-1">{data.value}</span>
                                       {data.trend && <span className="ml-1 text-[10px] opacity-75">({data.trend})</span>}
@@ -2294,23 +2295,23 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                                 {rec.recommendations.map((r, i) => <li key={i} className="text-muted-foreground">• {r}</li>)}
                               </ul>
                             )}
-                            
+
                             {/* Inline Orders for this problem */}
                             <div className="mt-3 pt-2 border-t border-dashed">
                               <div className="flex items-center justify-between mb-2">
                                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                                   <ShoppingCart className="h-3 w-3" /> Quick Orders
                                 </span>
-                                <Button 
-                                  size="sm" 
-                                  variant="ghost" 
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   className="h-6 text-xs"
                                   onClick={() => setShowInlineOrderPicker(showInlineOrderPicker === rec.id ? null : rec.id)}
                                 >
                                   {showInlineOrderPicker === rec.id ? 'Hide' : '+ Add Order'}
                                 </Button>
                               </div>
-                              
+
                               {/* Orders already added */}
                               {getOrdersForProblem(rec.id).length > 0 && (
                                 <div className="flex flex-wrap gap-1 mb-2">
@@ -2324,7 +2325,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                                   ))}
                                 </div>
                               )}
-                              
+
                               {/* Order picker */}
                               {showInlineOrderPicker === rec.id && (
                                 <div className="bg-slate-50 rounded p-2 space-y-2">
@@ -2335,11 +2336,10 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                                         key={order.id}
                                         onClick={() => addInlineOrder(rec.id, order.name)}
                                         disabled={getOrdersForProblem(rec.id).includes(order.name)}
-                                        className={`px-2 py-1 text-xs border rounded ${
-                                          getOrdersForProblem(rec.id).includes(order.name) 
-                                            ? 'bg-green-100 border-green-400 text-green-800' 
-                                            : 'hover:bg-blue-50 hover:border-blue-300'
-                                        }`}
+                                        className={`px-2 py-1 text-xs border rounded ${getOrdersForProblem(rec.id).includes(order.name)
+                                          ? 'bg-green-100 border-green-400 text-green-800'
+                                          : 'hover:bg-blue-50 hover:border-blue-300'
+                                          }`}
                                       >
                                         {order.name}
                                       </button>
@@ -2418,7 +2418,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   <strong>Alert:</strong> DVT prophylaxis not addressed. Please select prophylaxis, document contraindications, or confirm therapeutic anticoagulation.
                 </div>
               )}
-              
+
               <div>
                 <div className="text-sm font-medium mb-2">Current Anticoagulation</div>
                 <Select value={currentAnticoag} onValueChange={setCurrentAnticoag}>
@@ -2430,7 +2430,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {currentAnticoag === 'none' && (
                 <>
                   <div>
@@ -2438,9 +2438,9 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                     <div className="space-y-2">
                       {dvtPpxOptions.map(opt => (
                         <div key={opt.id} className="flex items-center gap-2">
-                          <Checkbox 
-                            checked={dvtPpxSelected.includes(opt.id)} 
-                            onCheckedChange={(c: boolean) => setDvtPpxSelected(c ? [...dvtPpxSelected, opt.id] : dvtPpxSelected.filter(p => p !== opt.id))} 
+                          <Checkbox
+                            checked={dvtPpxSelected.includes(opt.id)}
+                            onCheckedChange={(c: boolean) => setDvtPpxSelected(c ? [...dvtPpxSelected, opt.id] : dvtPpxSelected.filter(p => p !== opt.id))}
                           />
                           <span className="text-sm">{opt.name}</span>
                           <Badge variant="outline" className="text-[10px]">{opt.type}</Badge>
@@ -2448,15 +2448,15 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                       ))}
                     </div>
                   </div>
-                  
+
                   <div>
                     <div className="text-sm font-medium mb-2">Contraindications to Pharmacologic Ppx</div>
                     <div className="space-y-2">
                       {dvtContraindications.map(contra => (
                         <div key={contra.id} className="flex items-center gap-2">
-                          <Checkbox 
-                            checked={dvtContraSelected.includes(contra.id)} 
-                            onCheckedChange={(c: boolean) => setDvtContraSelected(c ? [...dvtContraSelected, contra.id] : dvtContraSelected.filter(p => p !== contra.id))} 
+                          <Checkbox
+                            checked={dvtContraSelected.includes(contra.id)}
+                            onCheckedChange={(c: boolean) => setDvtContraSelected(c ? [...dvtContraSelected, contra.id] : dvtContraSelected.filter(p => p !== contra.id))}
                           />
                           <span className="text-sm">{contra.name}</span>
                         </div>
@@ -2490,7 +2490,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {/* PT Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-blue-50">
                 <div className="flex items-center justify-between mb-2">
@@ -2501,7 +2501,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 </div>
                 <div className="text-xs text-muted-foreground">No PT notes available from FHIR data</div>
               </div>
-              
+
               {/* OT Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-green-50">
                 <div className="flex items-center justify-between mb-2">
@@ -2512,7 +2512,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                 </div>
                 <div className="text-xs text-muted-foreground">No OT notes available from FHIR data</div>
               </div>
-              
+
               {/* CM Note - Would come from FHIR Task or DocumentReference */}
               <div className="border rounded p-3 bg-purple-50">
                 <div className="flex items-center justify-between mb-2">
@@ -2536,7 +2536,7 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
           {!collapsedSections.has('equipment') && (
             <div className="p-4 space-y-4">
               <div className="text-xs text-muted-foreground mb-2">Select equipment needed. Click &quot;Generate Medicare Justification&quot; for each item requiring documentation.</div>
-              
+
               {['Mobility', 'Bathroom', 'Home', 'Respiratory'].map(category => (
                 <div key={category}>
                   <div className="text-sm font-medium mb-2">{category}</div>
@@ -2545,9 +2545,9 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                       <div key={eq.id} className="space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Checkbox 
-                              checked={selectedEquipment.includes(eq.id)} 
-                              onCheckedChange={(c: boolean) => setSelectedEquipment(c ? [...selectedEquipment, eq.id] : selectedEquipment.filter(e => e !== eq.id))} 
+                            <Checkbox
+                              checked={selectedEquipment.includes(eq.id)}
+                              onCheckedChange={(c: boolean) => setSelectedEquipment(c ? [...selectedEquipment, eq.id] : selectedEquipment.filter(e => e !== eq.id))}
                             />
                             <span className="text-sm">{eq.name}</span>
                           </div>
@@ -2578,61 +2578,122 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
             {collapsedSections.has('cmi') ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             <DollarSign className="h-4 w-4" />
             <span className="font-medium text-sm">💰 CMI / DIAGNOSES & BILLING</span>
-            {cmiDiagnoses.filter(d => d.suggested && !selectedDiagnoses.includes(d.code)).length > 0 && (
+            {cmiSuggestionsData?.suggestions && cmiSuggestionsData.suggestions.filter(d => !selectedDiagnoses.includes(d.code)).length > 0 && (
               <Badge variant="destructive" className="ml-2 text-[10px]">
-                {cmiDiagnoses.filter(d => d.suggested && !selectedDiagnoses.includes(d.code)).length} suggestions
+                {cmiSuggestionsData.suggestions.filter(d => !selectedDiagnoses.includes(d.code)).length} AI suggestions
               </Badge>
             )}
+            {cmiLoading && <Loader2 className="h-4 w-4 animate-spin ml-2" />}
           </button>
           {!collapsedSections.has('cmi') && (
             <div className="p-4 space-y-4">
-              {/* Suggested Diagnoses */}
-              {cmiDiagnoses.filter(d => d.suggested && !selectedDiagnoses.includes(d.code)).length > 0 && (
+              {/* AI-Powered Suggested Diagnoses */}
+              {cmiLoading ? (
+                <div className="bg-slate-50 border rounded p-4 text-center">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                  <div className="text-sm text-muted-foreground">Analyzing patient data for CMI opportunities...</div>
+                </div>
+              ) : cmiSuggestionsData?.suggestions && cmiSuggestionsData.suggestions.filter(d => !selectedDiagnoses.includes(d.code)).length > 0 ? (
                 <div className="bg-amber-50 border border-amber-200 rounded p-3">
                   <div className="font-medium text-sm text-amber-800 mb-2 flex items-center gap-2">
-                    <Zap className="h-4 w-4" /> Suggested Diagnoses (may improve CMI)
+                    <Zap className="h-4 w-4" />
+                    <span>AI-Suggested Diagnoses (may improve CMI)</span>
+                    {cmiSuggestionsData.isAIGenerated && (
+                      <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 ml-auto">
+                        <Sparkles className="h-3 w-3 mr-1" /> AI Generated
+                      </Badge>
+                    )}
                   </div>
                   <div className="space-y-2">
-                    {cmiDiagnoses.filter(d => d.suggested && !selectedDiagnoses.includes(d.code)).map(dx => (
-                      <div key={dx.code} className="flex items-center justify-between bg-white rounded p-2 border">
-                        <div>
+                    {cmiSuggestionsData.suggestions.filter(d => !selectedDiagnoses.includes(d.code)).map((dx: CMIDiagnosis) => (
+                      <div key={dx.code} className="flex items-start justify-between bg-white rounded p-2 border">
+                        <div className="flex-1">
                           <div className="text-sm font-medium">{dx.description}</div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                          <div className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
                             <span className="font-mono">{dx.code}</span>
-                            {dx.hcc && <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700">HCC</Badge>}
-                            {dx.mcc && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700">MCC</Badge>}
-                            {dx.cc && <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">CC</Badge>}
+                            {dx.category === 'mcc' && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700">MCC</Badge>}
+                            {dx.category === 'cc' && <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">CC</Badge>}
+                            {dx.category === 'hcc' && <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700">HCC</Badge>}
+                            <Badge variant="outline" className={`text-[10px] ${dx.confidence === 'high' ? 'bg-green-50 text-green-700' :
+                                dx.confidence === 'moderate' ? 'bg-yellow-50 text-yellow-700' :
+                                  'bg-gray-50 text-gray-600'
+                              }`}>
+                              {dx.confidence} confidence
+                            </Badge>
                           </div>
+                          {dx.evidence && dx.evidence.length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              <span className="font-medium">Evidence:</span> {dx.evidence.join(', ')}
+                            </div>
+                          )}
                         </div>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addDiagnosisToNote(dx)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs ml-2"
+                          onClick={() => {
+                            // Add to selected diagnoses and create A/P entry
+                            if (!selectedDiagnoses.includes(dx.code)) {
+                              setSelectedDiagnoses(prev => [...prev, dx.code])
+                            }
+                            // Create a new A/P recommendation for this diagnosis
+                            const newRec: APRecommendation = {
+                              id: `dx-${dx.code}`,
+                              problem: `${dx.description} (${dx.code})`,
+                              supportingData: dx.evidence ? dx.evidence.map(e => ({ type: 'lab' as const, label: 'Evidence', value: e })) : [],
+                              recommendations: ['Document and address as appropriate'],
+                              status: 'accepted'
+                            }
+                            setRecommendations(prev => [...prev, newRec])
+                            setExpandedProblems(prev => { const n = new Set(prev); n.add(newRec.id); return n })
+                          }}
+                        >
                           <Plus className="h-3 w-3 mr-1" /> Add to Note
                         </Button>
                       </div>
                     ))}
                   </div>
+                  {cmiSuggestionsData.documentationTips && cmiSuggestionsData.documentationTips.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-amber-200">
+                      <div className="text-xs text-amber-700 font-medium mb-1">Documentation Tips:</div>
+                      <ul className="text-xs text-amber-600 list-disc pl-4">
+                        {cmiSuggestionsData.documentationTips.map((tip, i) => (
+                          <li key={i}>{tip}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-50 border rounded p-3 text-sm text-muted-foreground">
+                  No additional CMI opportunities identified based on current patient data.
                 </div>
               )}
-              
-              {/* Selected Diagnoses */}
+
+              {/* Selected Diagnoses from FHIR Conditions */}
               <div>
-                <div className="font-medium text-sm mb-2">Active Diagnoses</div>
+                <div className="font-medium text-sm mb-2">Active Diagnoses (from FHIR)</div>
                 <div className="space-y-1">
-                  {cmiDiagnoses.map(dx => (
-                    <div key={dx.code} className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedDiagnoses.includes(dx.code)}
-                        onCheckedChange={() => toggleDiagnosis(dx.code)}
-                      />
-                      <span className="text-sm flex-1">{dx.description}</span>
-                      <span className="text-xs font-mono text-muted-foreground">{dx.code}</span>
-                      {dx.hcc && <Badge variant="outline" className="text-[10px]">HCC</Badge>}
-                      {dx.mcc && <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700">MCC</Badge>}
-                      {dx.cc && !dx.mcc && <Badge variant="outline" className="text-[10px]">CC</Badge>}
-                    </div>
-                  ))}
+                  {fhirConditions.filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active').slice(0, 15).map((cond, idx) => {
+                    const code = cond.code?.coding?.[0]?.code || ''
+                    const description = cond.code?.text || cond.code?.coding?.[0]?.display || 'Unknown condition'
+                    return (
+                      <div key={cond.id || idx} className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedDiagnoses.includes(code)}
+                          onCheckedChange={() => toggleDiagnosis(code)}
+                        />
+                        <span className="text-sm flex-1">{description}</span>
+                        {code && <span className="text-xs font-mono text-muted-foreground">{code}</span>}
+                      </div>
+                    )
+                  })}
+                  {fhirConditions.filter(c => c.clinicalStatus?.coding?.[0]?.code === 'active').length === 0 && (
+                    <div className="text-sm text-muted-foreground">No active conditions in FHIR</div>
+                  )}
                 </div>
               </div>
-              
+
               {/* Billing */}
               <div className="border-t pt-4">
                 <div className="font-medium text-sm mb-2 flex items-center gap-2">

@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Clock,
   User,
@@ -17,123 +18,34 @@ import {
   ChevronRight,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Loader2,
 } from 'lucide-react'
-
-// Types inspired by FHIR Encounter and related resources
-interface TimelineEvent {
-  id: string
-  type: 'note' | 'order' | 'lab' | 'vital' | 'medication' | 'procedure' | 'consult' | 'alert'
-  title: string
-  description?: string
-  timestamp: Date
-  author?: string
-  status?: 'completed' | 'pending' | 'cancelled'
-  priority?: 'routine' | 'urgent' | 'stat'
-  details?: Record<string, string | number>
-}
+import { useEncounterTimeline, type TimelineEvent } from '@/hooks/useEncounterTimeline'
 
 interface EncounterTimelineProps {
   patientId: string
   encounterId?: string
-  events?: TimelineEvent[]
+  events?: TimelineEvent[] // Optional override for custom events
   onEventClick?: (event: TimelineEvent) => void
 }
 
-// Mock timeline events
-const mockEvents: TimelineEvent[] = [
-  {
-    id: 'evt-1',
-    type: 'vital',
-    title: 'Vital Signs Recorded',
-    description: 'BP 142/88, HR 78, RR 16, Temp 98.6°F, SpO2 96%',
-    timestamp: new Date(Date.now() - 30 * 60 * 1000),
-    author: 'RN Johnson',
-    status: 'completed',
-    details: { 'BP': '142/88', 'HR': '78', 'RR': '16', 'Temp': '98.6°F', 'SpO2': '96%' }
-  },
-  {
-    id: 'evt-2',
-    type: 'lab',
-    title: 'Lab Results: BMP',
-    description: 'Na 138, K 4.2, Cr 1.4 (H), BUN 28 (H)',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    status: 'completed',
-    priority: 'routine',
-    details: { 'Na': '138', 'K': '4.2', 'Cr': '1.4 (H)', 'BUN': '28 (H)', 'Glucose': '142 (H)' }
-  },
-  {
-    id: 'evt-3',
-    type: 'medication',
-    title: 'Medication Administered',
-    description: 'Furosemide 40mg IV given',
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    author: 'RN Smith',
-    status: 'completed'
-  },
-  {
-    id: 'evt-4',
-    type: 'note',
-    title: 'Progress Note',
-    description: 'Patient improving, decreased oxygen requirements. Continue current management.',
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    author: 'Dr. Williams',
-    status: 'completed'
-  },
-  {
-    id: 'evt-5',
-    type: 'order',
-    title: 'New Orders Placed',
-    description: 'Echo ordered, Cardiology consult requested',
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    author: 'Dr. Williams',
-    status: 'pending'
-  },
-  {
-    id: 'evt-6',
-    type: 'consult',
-    title: 'Cardiology Consult',
-    description: 'Consult requested for CHF management',
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    author: 'Dr. Williams',
-    status: 'pending'
-  },
-  {
-    id: 'evt-7',
-    type: 'alert',
-    title: 'Critical Lab Value',
-    description: 'Potassium 5.8 mEq/L - reviewed and acknowledged',
-    timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000),
-    author: 'Dr. Johnson',
-    status: 'completed',
-    priority: 'stat'
-  },
-  {
-    id: 'evt-8',
-    type: 'procedure',
-    title: 'Foley Catheter Placed',
-    description: '16Fr Foley inserted, clear yellow urine output',
-    timestamp: new Date(Date.now() - 10 * 60 * 60 * 1000),
-    author: 'RN Davis',
-    status: 'completed'
-  },
-  {
-    id: 'evt-9',
-    type: 'note',
-    title: 'Admission H&P',
-    description: '68 yo M with acute on chronic systolic heart failure, admitted for diuresis',
-    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-    author: 'Dr. Williams',
-    status: 'completed'
-  }
-]
 
 export function EncounterTimeline({
   patientId,
   encounterId,
-  events = mockEvents,
+  events: providedEvents,
   onEventClick
 }: EncounterTimelineProps) {
+  // Fetch events from FHIR if not provided
+  const { data: fhirEvents, isLoading } = useEncounterTimeline(
+    providedEvents ? undefined : patientId, // Skip fetch if events provided
+    encounterId
+  )
+
+  // Use provided events or fetched FHIR events
+  const events = providedEvents || fhirEvents || []
+
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set())
   const [typeFilter, setTypeFilter] = useState<string>('all')
 
@@ -147,6 +59,34 @@ export function EncounterTimeline({
       }
       return next
     })
+  }
+
+  // Show loading state
+  if (isLoading && !providedEvents) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Clinical Timeline
+            <Loader2 className="h-4 w-4 animate-spin ml-2" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex gap-4">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-1/3" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   const filteredEvents = events.filter(e => typeFilter === 'all' || e.type === typeFilter)
@@ -168,7 +108,7 @@ export function EncounterTimeline({
   const getEventColor = (type: TimelineEvent['type'], priority?: string) => {
     if (priority === 'stat') return 'bg-red-100 border-red-300 text-red-700'
     if (priority === 'urgent') return 'bg-amber-100 border-amber-300 text-amber-700'
-    
+
     const colors: Record<string, string> = {
       note: 'bg-blue-100 border-blue-300 text-blue-700',
       order: 'bg-purple-100 border-purple-300 text-purple-700',
@@ -194,14 +134,14 @@ export function EncounterTimeline({
     const diff = now.getTime() - date.getTime()
     const hours = Math.floor(diff / (1000 * 60 * 60))
     const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-    
+
     if (hours < 1) return `${mins}m ago`
     if (hours < 24) return `${hours}h ${mins}m ago`
-    return date.toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      hour: 'numeric', 
-      minute: '2-digit' 
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
     })
   }
 
@@ -231,80 +171,88 @@ export function EncounterTimeline({
         <div className="relative">
           {/* Timeline line */}
           <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-slate-200" />
-          
-          <div className="space-y-0">
-            {filteredEvents.map((event, index) => {
-              const isExpanded = expandedEvents.has(event.id)
-              return (
-                <div 
-                  key={event.id} 
-                  className="relative pl-12 pr-4 py-3 hover:bg-slate-50 cursor-pointer"
-                  onClick={() => onEventClick?.(event)}
-                >
-                  {/* Timeline dot */}
-                  <div className={`absolute left-4 w-5 h-5 rounded-full border-2 flex items-center justify-center ${getEventColor(event.type, event.priority)}`}>
-                    {getEventIcon(event.type)}
-                  </div>
-                  
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">{event.title}</span>
-                        {event.priority === 'stat' && (
-                          <Badge variant="destructive" className="text-[10px]">STAT</Badge>
-                        )}
-                        {event.priority === 'urgent' && (
-                          <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-700">URGENT</Badge>
-                        )}
-                        {getStatusIcon(event.status)}
-                      </div>
-                      {event.description && (
-                        <div className="text-sm text-muted-foreground mt-0.5">
-                          {event.description}
+
+          {filteredEvents.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">
+              <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No clinical events found for this encounter.</p>
+              <p className="text-sm">Events will appear here as care is documented.</p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {filteredEvents.map((event, index) => {
+                const isExpanded = expandedEvents.has(event.id)
+                return (
+                  <div
+                    key={event.id}
+                    className="relative pl-12 pr-4 py-3 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => onEventClick?.(event)}
+                  >
+                    {/* Timeline dot */}
+                    <div className={`absolute left-4 w-5 h-5 rounded-full border-2 flex items-center justify-center ${getEventColor(event.type, event.priority)}`}>
+                      {getEventIcon(event.type)}
+                    </div>
+
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{event.title}</span>
+                          {event.priority === 'stat' && (
+                            <Badge variant="destructive" className="text-[10px]">STAT</Badge>
+                          )}
+                          {event.priority === 'urgent' && (
+                            <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-700">URGENT</Badge>
+                          )}
+                          {getStatusIcon(event.status)}
                         </div>
-                      )}
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        <span>{formatTime(event.timestamp)}</span>
-                        {event.author && (
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" /> {event.author}
-                          </span>
-                        )}
-                      </div>
-                      
-                      {/* Expanded details */}
-                      {isExpanded && event.details && (
-                        <div className="mt-2 p-2 bg-slate-100 rounded text-sm">
-                          <div className="grid grid-cols-2 gap-2">
-                            {Object.entries(event.details).map(([key, value]) => (
-                              <div key={key} className="flex justify-between">
-                                <span className="text-muted-foreground">{key}:</span>
-                                <span className="font-medium">{value}</span>
-                              </div>
-                            ))}
+                        {event.description && (
+                          <div className="text-sm text-muted-foreground mt-0.5">
+                            {event.description}
                           </div>
+                        )}
+                        <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                          <span>{formatTime(event.timestamp)}</span>
+                          {event.author && (
+                            <span className="flex items-center gap-1">
+                              <User className="h-3 w-3" /> {event.author}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Expanded details */}
+                        {isExpanded && event.details && (
+                          <div className="mt-2 p-2 bg-slate-100 rounded text-sm">
+                            <div className="grid grid-cols-2 gap-2">
+                              {Object.entries(event.details).map(([key, value]) => (
+                                <div key={key} className="flex justify-between">
+                                  <span className="text-muted-foreground">{key}:</span>
+                                  <span className="font-medium">{value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {event.details && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleExpanded(event.id)
+                          }}
+                        >
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
                       )}
                     </div>
-                    
-                    {event.details && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleExpanded(event.id)
-                        }}
-                      >
-                        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                      </Button>
-                    )}
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

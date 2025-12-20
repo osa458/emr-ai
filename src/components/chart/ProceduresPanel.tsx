@@ -18,7 +18,7 @@ export function ProceduresPanel({ patientId }: ProceduresPanelProps) {
     const [expandedProcedure, setExpandedProcedure] = useState<string | null>(null)
 
     const formatDate = (dateStr?: string) => {
-        if (!dateStr) return 'Unknown date'
+        if (!dateStr) return 'Date not documented'
         return new Date(dateStr).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'short',
@@ -37,11 +37,11 @@ export function ProceduresPanel({ patientId }: ProceduresPanelProps) {
     }
 
     const getProcedureName = (proc: Procedure) => {
-        return proc.code?.text || proc.code?.coding?.[0]?.display || 'Unknown Procedure'
+        return proc.code?.text || proc.code?.coding?.[0]?.display || 'Procedure not documented'
     }
 
     const getPerformer = (proc: Procedure) => {
-        return proc.performer?.[0]?.actor?.display || 'Unknown'
+        return proc.performer?.[0]?.actor?.display || 'Performer not documented'
     }
 
     if (isLoading) {
@@ -102,7 +102,7 @@ export function ProceduresPanel({ patientId }: ProceduresPanelProps) {
                             const complication = proc.complication?.[0]?.text || proc.complication?.[0]?.coding?.[0]?.display
                             const location = proc.location?.display
                             const encounter = proc.encounter?.display
-                            
+
                             return (
                                 <div
                                     key={proc.id}
@@ -134,11 +134,11 @@ export function ProceduresPanel({ patientId }: ProceduresPanelProps) {
                                                 </div>
                                             </div>
                                             <Badge className={getStatusColor(proc.status)}>
-                                                {proc.status || 'unknown'}
+                                                {proc.status || 'pending'}
                                             </Badge>
                                         </div>
                                     </button>
-                                    
+
                                     {isExpanded && (
                                         <div className="px-4 pb-4 pt-0 ml-6 border-t border-blue-200 mt-2">
                                             <div className="grid grid-cols-2 gap-3 mt-3 text-sm">

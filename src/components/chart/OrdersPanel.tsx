@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -25,33 +25,13 @@ import {
   Trash2,
   Edit,
   History,
+  Loader2,
 } from 'lucide-react'
 import type { MedicationRequest, ServiceRequest } from '@medplum/fhirtypes'
 import { usePatientMedicationRequests, usePatientOrders } from '@/hooks/useFHIRData'
+import { useOrderSets, fallbackOrderSets, fallbackSingleOrders, type OrderSet, type OrderSetItem, type SingleOrder } from '@/hooks/useOrderSets'
 
-// Types
-interface OrderSetItem {
-  id: string
-  name: string
-  selected: boolean
-  details?: string
-}
-
-interface OrderSet {
-  id: string
-  name: string
-  category: string
-  description: string
-  items: OrderSetItem[]
-}
-
-interface SingleOrder {
-  id: string
-  name: string
-  category: string
-  details?: string
-}
-
+// Local types
 interface PendingOrder {
   id: string
   name: string
@@ -61,201 +41,6 @@ interface PendingOrder {
   status: 'pending' | 'submitted' | 'completed'
   addedAt: Date
 }
-
-// Order Sets Data
-const orderSets: OrderSet[] = [
-  {
-    id: 'admission',
-    name: 'Admission Order Set',
-    category: 'General',
-    description: 'Standard admission orders',
-    items: [
-      { id: 'admit', name: 'Admit to Medicine', selected: true },
-      { id: 'attending', name: 'Attending: ***', selected: true },
-      { id: 'diagnosis', name: 'Diagnosis: ***', selected: true },
-      { id: 'condition', name: 'Condition: Stable', selected: true },
-      { id: 'code', name: 'Code Status: Full Code', selected: true },
-      { id: 'diet', name: 'Diet: Cardiac', selected: true },
-      { id: 'activity', name: 'Activity: Up ad lib', selected: true },
-      { id: 'nursing', name: 'Nursing: Vitals q4h', selected: true },
-      { id: 'ivf', name: 'IVF: Saline lock', selected: true },
-      { id: 'dvt', name: 'DVT ppx: Heparin 5000u SC TID', selected: true },
-      { id: 'labs', name: 'Labs: CBC, CMP in AM', selected: true },
-    ]
-  },
-  {
-    id: 'diabetes',
-    name: 'Diabetes Management',
-    category: 'Endocrine',
-    description: 'Insulin and glucose management',
-    items: [
-      { id: 'fsbs', name: 'Fingerstick glucose AC and HS', selected: true },
-      { id: 'sliding', name: 'Insulin sliding scale (moderate)', selected: true, details: 'Lispro: 150-200: 2u, 201-250: 4u, 251-300: 6u, 301-350: 8u, >350: 10u + call MD' },
-      { id: 'basal', name: 'Basal insulin: Glargine *** units qHS', selected: false },
-      { id: 'meal', name: 'Mealtime insulin: Lispro *** units AC', selected: false },
-      { id: 'hypogly', name: 'Hypoglycemia protocol', selected: true },
-      { id: 'a1c', name: 'HbA1c if not done in 3 months', selected: true },
-    ]
-  },
-  {
-    id: 'chf',
-    name: 'CHF / Heart Failure',
-    category: 'Cardiology',
-    description: 'Heart failure management orders',
-    items: [
-      { id: 'weight', name: 'Daily weights', selected: true },
-      { id: 'io', name: 'Strict I/O', selected: true },
-      { id: 'fluid', name: 'Fluid restriction: 1.5L/day', selected: true },
-      { id: 'sodium', name: 'Low sodium diet (<2g)', selected: true },
-      { id: 'lasix', name: 'Furosemide 40mg IV BID', selected: true },
-      { id: 'bnp', name: 'BNP daily x 3 days', selected: true },
-      { id: 'cmp', name: 'BMP daily', selected: true },
-      { id: 'tele', name: 'Telemetry', selected: true },
-      { id: 'o2', name: 'O2 to maintain SpO2 > 92%', selected: true },
-    ]
-  },
-  {
-    id: 'transfusion',
-    name: 'Blood Transfusion',
-    category: 'Hematology',
-    description: 'PRBC transfusion orders',
-    items: [
-      { id: 'type', name: 'Type and Screen', selected: true },
-      { id: 'prbc', name: 'Transfuse 1 unit PRBC', selected: true },
-      { id: 'premeds', name: 'Premedication: Tylenol 650mg PO', selected: false },
-      { id: 'lasix_post', name: 'Furosemide 20mg IV after transfusion', selected: false, details: 'For patients at risk of volume overload' },
-      { id: 'vitals', name: 'Vitals q15min x 4, then q30min x 2', selected: true },
-      { id: 'post_hgb', name: 'Post-transfusion Hgb in 1 hour', selected: true },
-    ]
-  },
-  {
-    id: 'ventilator',
-    name: 'Ventilator / Intubation',
-    category: 'Critical Care',
-    description: 'Mechanical ventilation orders',
-    items: [
-      { id: 'mode', name: 'Mode: AC/VC', selected: true },
-      { id: 'vt', name: 'Tidal Volume: 6-8 mL/kg IBW', selected: true },
-      { id: 'rr', name: 'Rate: 14', selected: true },
-      { id: 'peep', name: 'PEEP: 5', selected: true },
-      { id: 'fio2', name: 'FiO2: 100% initially, titrate to SpO2 > 92%', selected: true },
-      { id: 'sedation', name: 'Sedation: Propofol gtt', selected: true },
-      { id: 'analgesia', name: 'Analgesia: Fentanyl gtt', selected: true },
-      { id: 'hob', name: 'HOB > 30 degrees', selected: true },
-      { id: 'abg', name: 'ABG in 30 minutes', selected: true },
-      { id: 'cxr', name: 'Portable CXR to confirm ETT placement', selected: true },
-    ]
-  },
-  {
-    id: 'lvad',
-    name: 'LVAD Management',
-    category: 'Critical Care',
-    description: 'Left ventricular assist device orders',
-    items: [
-      { id: 'params', name: 'LVAD parameters q4h: Speed, Flow, PI, Power', selected: true },
-      { id: 'driveline', name: 'Driveline site care daily', selected: true },
-      { id: 'anticoag', name: 'Warfarin for INR goal 2-3', selected: true },
-      { id: 'aspirin', name: 'Aspirin 325mg daily', selected: true },
-      { id: 'bp', name: 'MAP goal 70-80 mmHg', selected: true },
-      { id: 'echo', name: 'Weekly ramp study/echo', selected: false },
-      { id: 'labs', name: 'INR, LDH, plasma-free Hgb weekly', selected: true },
-    ]
-  },
-  {
-    id: 'ecmo',
-    name: 'ECMO Management',
-    category: 'Critical Care',
-    description: 'Extracorporeal membrane oxygenation',
-    items: [
-      { id: 'params', name: 'ECMO parameters q1h: Flow, RPM, Sweep', selected: true },
-      { id: 'anticoag', name: 'Heparin gtt for PTT 60-80', selected: true },
-      { id: 'fibrinogen', name: 'Maintain fibrinogen > 200', selected: true },
-      { id: 'hgb', name: 'Maintain Hgb > 8', selected: true },
-      { id: 'platelets', name: 'Maintain platelets > 80k', selected: true },
-      { id: 'cannula', name: 'Cannula site checks q4h', selected: true },
-      { id: 'neuro', name: 'Neuro checks q2h', selected: true },
-      { id: 'daily_labs', name: 'Daily: CBC, CMP, LDH, fibrinogen, D-dimer', selected: true },
-    ]
-  },
-  {
-    id: 'sepsis',
-    name: 'Sepsis Bundle',
-    category: 'Infectious Disease',
-    description: 'Sepsis 3-hour and 6-hour bundles',
-    items: [
-      { id: 'lactate', name: 'Lactate level STAT', selected: true },
-      { id: 'cultures', name: 'Blood cultures x 2 before antibiotics', selected: true },
-      { id: 'abx', name: 'Broad-spectrum antibiotics within 1 hour', selected: true, details: 'Vancomycin + Zosyn (or per local antibiogram)' },
-      { id: 'fluid', name: '30 mL/kg crystalloid for hypotension or lactate ≥ 4', selected: true },
-      { id: 'pressors', name: 'Vasopressors if fluid-refractory hypotension', selected: false, details: 'Norepinephrine first-line' },
-      { id: 'repeat_lactate', name: 'Repeat lactate if initial > 2', selected: true },
-      { id: 'procalc', name: 'Procalcitonin', selected: true },
-    ]
-  },
-]
-
-// Single Orders Data
-const singleOrders: SingleOrder[] = [
-  // Labs
-  { id: 'cbc', name: 'CBC with Differential', category: 'Labs' },
-  { id: 'cmp', name: 'Comprehensive Metabolic Panel', category: 'Labs' },
-  { id: 'bmp', name: 'Basic Metabolic Panel', category: 'Labs' },
-  { id: 'lfts', name: 'Liver Function Tests', category: 'Labs' },
-  { id: 'lipid', name: 'Lipid Panel', category: 'Labs' },
-  { id: 'tsh', name: 'TSH', category: 'Labs' },
-  { id: 'hba1c', name: 'Hemoglobin A1c', category: 'Labs' },
-  { id: 'bnp', name: 'BNP', category: 'Labs' },
-  { id: 'trop', name: 'Troponin', category: 'Labs' },
-  { id: 'pt_inr', name: 'PT/INR', category: 'Labs' },
-  { id: 'ptt', name: 'PTT', category: 'Labs' },
-  { id: 'ua', name: 'Urinalysis', category: 'Labs' },
-  { id: 'ucx', name: 'Urine Culture', category: 'Labs' },
-  { id: 'bcx', name: 'Blood Cultures x 2', category: 'Labs' },
-  { id: 'abg', name: 'Arterial Blood Gas', category: 'Labs' },
-  { id: 'lactate', name: 'Lactate', category: 'Labs' },
-  { id: 'procalc', name: 'Procalcitonin', category: 'Labs' },
-  { id: 'mg', name: 'Magnesium', category: 'Labs' },
-  { id: 'phos', name: 'Phosphorus', category: 'Labs' },
-  // Imaging
-  { id: 'cxr', name: 'Chest X-Ray', category: 'Imaging' },
-  { id: 'ct_head', name: 'CT Head without contrast', category: 'Imaging' },
-  { id: 'ct_chest', name: 'CT Chest with contrast', category: 'Imaging' },
-  { id: 'ct_abd', name: 'CT Abdomen/Pelvis with contrast', category: 'Imaging' },
-  { id: 'cta_pe', name: 'CTA Chest for PE', category: 'Imaging' },
-  { id: 'echo', name: 'Echocardiogram', category: 'Imaging' },
-  { id: 'us_abd', name: 'Ultrasound Abdomen', category: 'Imaging' },
-  { id: 'us_doppler', name: 'Lower Extremity Doppler', category: 'Imaging' },
-  // Medications
-  { id: 'ivf_ns', name: 'Normal Saline 1L IV', category: 'Medications' },
-  { id: 'ivf_lr', name: 'Lactated Ringers 1L IV', category: 'Medications' },
-  { id: 'lasix_iv', name: 'Furosemide 40mg IV', category: 'Medications' },
-  { id: 'lasix_po', name: 'Furosemide 40mg PO', category: 'Medications' },
-  { id: 'tylenol', name: 'Acetaminophen 650mg PO PRN', category: 'Medications' },
-  { id: 'morphine', name: 'Morphine 2mg IV PRN', category: 'Medications' },
-  { id: 'zofran', name: 'Ondansetron 4mg IV PRN', category: 'Medications' },
-  { id: 'protonix', name: 'Pantoprazole 40mg IV daily', category: 'Medications' },
-  { id: 'heparin_ppx', name: 'Heparin 5000u SC TID', category: 'Medications' },
-  { id: 'lovenox', name: 'Enoxaparin 40mg SC daily', category: 'Medications' },
-  // Consults
-  { id: 'cards', name: 'Cardiology Consult', category: 'Consults' },
-  { id: 'gi', name: 'GI Consult', category: 'Consults' },
-  { id: 'neph', name: 'Nephrology Consult', category: 'Consults' },
-  { id: 'pulm', name: 'Pulmonology Consult', category: 'Consults' },
-  { id: 'id', name: 'Infectious Disease Consult', category: 'Consults' },
-  { id: 'surgery', name: 'Surgery Consult', category: 'Consults' },
-  { id: 'palliative', name: 'Palliative Care Consult', category: 'Consults' },
-  { id: 'pt', name: 'Physical Therapy', category: 'Consults' },
-  { id: 'ot', name: 'Occupational Therapy', category: 'Consults' },
-  { id: 'sw', name: 'Social Work', category: 'Consults' },
-  // Procedures
-  { id: 'foley', name: 'Foley Catheter', category: 'Procedures' },
-  { id: 'ng', name: 'NG Tube Placement', category: 'Procedures' },
-  { id: 'central', name: 'Central Line Placement', category: 'Procedures' },
-  { id: 'art_line', name: 'Arterial Line Placement', category: 'Procedures' },
-  { id: 'lp', name: 'Lumbar Puncture', category: 'Procedures' },
-  { id: 'thoracentesis', name: 'Thoracentesis', category: 'Procedures' },
-  { id: 'paracentesis', name: 'Paracentesis', category: 'Procedures' },
-]
 
 interface OrdersPanelProps {
   patientId: string
@@ -270,6 +55,23 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
   const [submittedOrders, setSubmittedOrders] = useState<PendingOrder[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Labs', 'Medications']))
 
+  // Fetch order sets from FHIR ActivityDefinitions
+  const {
+    data: fhirOrderSets,
+    isLoading: orderSetsLoading
+  } = useOrderSets()
+
+  // Use FHIR order sets if available, otherwise fall back to hardcoded
+  const orderSets = useMemo(() => {
+    if (fhirOrderSets && fhirOrderSets.length > 0) {
+      return fhirOrderSets
+    }
+    return fallbackOrderSets
+  }, [fhirOrderSets])
+
+  // Single orders (use fallback for now, could be fetched from FHIR Catalog in future)
+  const singleOrders = fallbackSingleOrders
+
   // FHIR-backed active medication orders (MedicationRequest)
   const {
     data: medicationRequests,
@@ -283,9 +85,9 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
     isLoading: ordersLoading,
     isError: ordersError,
   } = usePatientOrders(patientId)
-  
+
   // Filter orders by search
-  const filteredSingleOrders = orderSearch 
+  const filteredSingleOrders = orderSearch
     ? singleOrders.filter(o => o.name.toLowerCase().includes(orderSearch.toLowerCase()) || o.category.toLowerCase().includes(orderSearch.toLowerCase()))
     : singleOrders
 
@@ -295,7 +97,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
 
   // Order helpers
   const toggleSingleOrder = (orderId: string) => {
-    setSelectedSingleOrders(prev => 
+    setSelectedSingleOrders(prev =>
       prev.includes(orderId) ? prev.filter(o => o !== orderId) : [...prev, orderId]
     )
   }
@@ -327,7 +129,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
 
   const addToPending = () => {
     const newPending: PendingOrder[] = []
-    
+
     // Add single orders
     selectedSingleOrders.forEach(orderId => {
       const order = singleOrders.find(o => o.id === orderId)
@@ -342,7 +144,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
         })
       }
     })
-    
+
     // Add order set items
     Object.entries(orderSetSelections).forEach(([setId, items]) => {
       const orderSet = orderSets.find(s => s.id === setId)
@@ -365,7 +167,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
         })
       }
     })
-    
+
     setPendingOrders(prev => [...prev, ...newPending])
     setSelectedSingleOrders([])
     setOrderSetSelections({})
@@ -383,7 +185,7 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
   }
 
   const orderCategories = ['Labs', 'Imaging', 'Medications', 'Consults', 'Procedures']
-  const pendingCount = pendingOrders.length + selectedSingleOrders.length + 
+  const pendingCount = pendingOrders.length + selectedSingleOrders.length +
     Object.values(orderSetSelections).reduce((acc, items) => acc + Object.values(items).filter(Boolean).length, 0)
 
   return (
@@ -423,9 +225,8 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                     <button
                       key={set.id}
                       onClick={() => openOrderSet(set.id)}
-                      className={`p-3 border rounded-lg text-left hover:bg-blue-50 transition-colors ${
-                        activeOrderSet === set.id ? 'bg-blue-100 border-blue-400' : ''
-                      }`}
+                      className={`p-3 border rounded-lg text-left hover:bg-blue-50 transition-colors ${activeOrderSet === set.id ? 'bg-blue-100 border-blue-400' : ''
+                        }`}
                     >
                       <div className="font-medium text-sm">{set.name}</div>
                       <div className="text-xs text-muted-foreground">{set.category}</div>
@@ -470,10 +271,10 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                 {orderCategories.map(category => {
                   const categoryOrders = filteredSingleOrders.filter(o => o.category === category)
                   if (categoryOrders.length === 0) return null
-                  
+
                   const isExpanded = expandedCategories.has(category)
                   const selectedCount = categoryOrders.filter(o => selectedSingleOrders.includes(o.id)).length
-                  
+
                   return (
                     <div key={category} className="border rounded-lg">
                       <button
@@ -499,11 +300,10 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                             <button
                               key={order.id}
                               onClick={() => toggleSingleOrder(order.id)}
-                              className={`px-2 py-1 text-xs border rounded transition-colors ${
-                                selectedSingleOrders.includes(order.id)
-                                  ? 'bg-green-100 border-green-400 text-green-800'
-                                  : 'hover:bg-slate-50'
-                              }`}
+                              className={`px-2 py-1 text-xs border rounded transition-colors ${selectedSingleOrders.includes(order.id)
+                                ? 'bg-green-100 border-green-400 text-green-800'
+                                : 'hover:bg-slate-50'
+                                }`}
                             >
                               {selectedSingleOrders.includes(order.id) && <Check className="h-3 w-3 inline mr-1" />}
                               {order.name}
@@ -635,22 +435,21 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                     const priority = sr.priority || 'routine'
                     const authored = sr.authoredOn
                       ? new Date(sr.authoredOn).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
                       : undefined
                     const requester = sr.requester?.display
 
                     return (
                       <div
                         key={sr.id}
-                        className={`border rounded px-2 py-1.5 text-[11px] flex flex-col gap-0.5 ${
-                          priority === 'urgent' || priority === 'stat'
-                            ? 'bg-red-50 border-red-200'
-                            : 'bg-slate-50 border-slate-200'
-                        }`}
+                        className={`border rounded px-2 py-1.5 text-[11px] flex flex-col gap-0.5 ${priority === 'urgent' || priority === 'stat'
+                          ? 'bg-red-50 border-red-200'
+                          : 'bg-slate-50 border-slate-200'
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <span className="font-medium truncate">{name}</span>
@@ -714,11 +513,11 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                       'Medication order'
                     const authored = mr.authoredOn
                       ? new Date(mr.authoredOn).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
                       : undefined
                     const route =
                       mr.dosageInstruction?.[0]?.route?.text ||

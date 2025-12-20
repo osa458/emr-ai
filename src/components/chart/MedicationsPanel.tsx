@@ -46,25 +46,25 @@ interface MedicationDisplay {
 }
 
 function parseMedicationRequest(med: MedicationRequest): MedicationDisplay {
-  const name = med.medicationCodeableConcept?.text || 
-               med.medicationCodeableConcept?.coding?.[0]?.display || 
-               'Unknown'
-  
+  const name = med.medicationCodeableConcept?.text ||
+    med.medicationCodeableConcept?.coding?.[0]?.display ||
+    'Medication not specified'
+
   const dosage = med.dosageInstruction?.[0]
   const doseValue = dosage?.doseAndRate?.[0]?.doseQuantity?.value
   const doseUnit = dosage?.doseAndRate?.[0]?.doseQuantity?.unit || ''
   const dose = doseValue ? `${doseValue} ${doseUnit}` : ''
-  
-  const frequency = dosage?.timing?.code?.text || 
-                    dosage?.timing?.repeat?.frequency?.toString() || ''
-  
-  const route = dosage?.route?.coding?.[0]?.display || 
-                dosage?.route?.text || ''
-  
-  const isIV = route.toLowerCase().includes('iv') || 
-               route.toLowerCase().includes('intravenous') ||
-               name.toLowerCase().includes(' iv')
-  
+
+  const frequency = dosage?.timing?.code?.text ||
+    dosage?.timing?.repeat?.frequency?.toString() || ''
+
+  const route = dosage?.route?.coding?.[0]?.display ||
+    dosage?.route?.text || ''
+
+  const isIV = route.toLowerCase().includes('iv') ||
+    route.toLowerCase().includes('intravenous') ||
+    name.toLowerCase().includes(' iv')
+
   return {
     id: med.id || '',
     name,
@@ -79,21 +79,21 @@ function parseMedicationRequest(med: MedicationRequest): MedicationDisplay {
 }
 
 function parseMedicationStatement(med: MedicationStatement): MedicationDisplay {
-  const name = med.medicationCodeableConcept?.text || 
-               med.medicationCodeableConcept?.coding?.[0]?.display || 
-               'Unknown'
-  
+  const name = med.medicationCodeableConcept?.text ||
+    med.medicationCodeableConcept?.coding?.[0]?.display ||
+    'Medication not specified'
+
   const dosage = med.dosage?.[0]
   const dose = dosage?.text || ''
   const frequency = dosage?.timing?.code?.text || ''
-  
+
   // Check for insurance coverage note
-  const insuranceNote = med.note?.find(n => 
-    n.text?.toLowerCase().includes('insurance') || 
+  const insuranceNote = med.note?.find(n =>
+    n.text?.toLowerCase().includes('insurance') ||
     n.text?.toLowerCase().includes('covered')
   )
   const insuranceCovered = !insuranceNote?.text?.toLowerCase().includes('not be covered')
-  
+
   return {
     id: med.id || '',
     name,
@@ -105,10 +105,10 @@ function parseMedicationStatement(med: MedicationStatement): MedicationDisplay {
   }
 }
 
-export function MedicationsPanel({ 
-  inpatientMedications, 
-  homeMedications, 
-  isLoading 
+export function MedicationsPanel({
+  inpatientMedications,
+  homeMedications,
+  isLoading
 }: MedicationsPanelProps) {
   const [activeTab, setActiveTab] = useState<'inpatient' | 'home' | 'comparison'>('inpatient')
 
@@ -117,11 +117,11 @@ export function MedicationsPanel({
 
   // Find medications that appear in both lists (for comparison)
   const comparisonData = parsedHome.map(homeMed => {
-    const matchingInpatient = parsedInpatient.find(inpMed => 
+    const matchingInpatient = parsedInpatient.find(inpMed =>
       inpMed.name.toLowerCase().includes(homeMed.name.split(' ')[0].toLowerCase()) ||
       homeMed.name.toLowerCase().includes(inpMed.name.split(' ')[0].toLowerCase())
     )
-    
+
     return {
       homeMed,
       inpatientMed: matchingInpatient,
@@ -218,7 +218,7 @@ export function MedicationsPanel({
                       </TableCell>
                       <TableCell>{med.route || 'PO'}</TableCell>
                       <TableCell>
-                        <Badge 
+                        <Badge
                           variant={med.status === 'active' ? 'default' : 'secondary'}
                           className={med.status === 'active' ? 'bg-green-100 text-green-800' : ''}
                         >
@@ -239,7 +239,7 @@ export function MedicationsPanel({
                   <span className="font-medium">IV Medications Active</span>
                 </div>
                 <div className="mt-1 text-sm text-amber-700">
-                  Patient has {parsedInpatient.filter(m => m.isIV).length} IV medication(s). 
+                  Patient has {parsedInpatient.filter(m => m.isIV).length} IV medication(s).
                   Must convert to oral before discharge.
                 </div>
               </div>

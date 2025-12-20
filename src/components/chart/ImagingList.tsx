@@ -48,10 +48,10 @@ interface ImagingDisplay {
 }
 
 function parseImagingStudy(report: DiagnosticReport): ImagingDisplay {
-  const name = report.code?.text || 
-               report.code?.coding?.[0]?.display || 
-               'Unknown Study'
-  
+  const name = report.code?.text ||
+    report.code?.coding?.[0]?.display ||
+    'Study not specified'
+
   // Extract modality from category or code
   const modalityCode = report.code?.coding?.[0]?.display || name
   let modality = 'Other'
@@ -62,7 +62,7 @@ function parseImagingStudy(report: DiagnosticReport): ImagingDisplay {
   else if (modalityCode.includes('Nuclear') || modalityCode.includes('PET')) modality = 'Nuclear'
 
   // Extract body part
-  let bodyPart = 'Unknown'
+  let bodyPart = 'Not specified'
   if (name.includes('Chest')) bodyPart = 'Chest'
   else if (name.includes('Abdomen')) bodyPart = 'Abdomen'
   else if (name.includes('Pelvis')) bodyPart = 'Pelvis'
@@ -108,12 +108,12 @@ export function ImagingList({ imagingStudies, isLoading }: ImagingListProps) {
     .sort((a, b) => b.date.getTime() - a.date.getTime())
 
   const modalities = ['all', ...Array.from(new Set(parsedStudies.map(s => s.modality)))]
-  
-  const filteredStudies = filterModality === 'all' 
-    ? parsedStudies 
+
+  const filteredStudies = filterModality === 'all'
+    ? parsedStudies
     : parsedStudies.filter(s => s.modality === filterModality)
 
-  const pendingCount = parsedStudies.filter(s => 
+  const pendingCount = parsedStudies.filter(s =>
     s.status === 'registered' || s.status === 'preliminary'
   ).length
 
@@ -213,8 +213,8 @@ export function ImagingList({ imagingStudies, isLoading }: ImagingListProps) {
                   <TableCell>
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => setSelectedStudy(study)}
                           disabled={study.status === 'registered'}
@@ -238,7 +238,7 @@ export function ImagingList({ imagingStudies, isLoading }: ImagingListProps) {
                             <Badge variant="outline">{study.bodyPart}</Badge>
                             <Badge className={statusColors[study.status]}>{study.status}</Badge>
                           </div>
-                          
+
                           <div>
                             <h4 className="font-medium mb-2 flex items-center gap-2">
                               <FileText className="h-4 w-4" />
