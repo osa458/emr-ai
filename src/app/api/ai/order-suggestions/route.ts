@@ -11,9 +11,8 @@ import OpenAI from 'openai'
  * - Current medications
  */
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-})
+// Note: OpenAI client is created lazily inside the handler to avoid
+// build-time errors when the API key env var isn't available
 
 // Helper to fetch from FHIR
 async function fetchFHIR(path: string): Promise<any> {
@@ -125,6 +124,7 @@ Only suggest orders that are clearly relevant to this patient's clinical picture
 
         if (process.env.OPENAI_API_KEY) {
             try {
+                const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
                 const completion = await openai.chat.completions.create({
                     model: 'gpt-4o',
                     messages: [
