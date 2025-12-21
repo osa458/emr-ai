@@ -340,6 +340,36 @@ function transformConditionsToAP(conditions: Condition[], labs: Observation[], v
   })
 }
 
+// Helper to generate prefilled physical exam from vitals
+function generatePrefilledExam(vitalsData: { latest: { hr: number | string; sbp: number | string; dbp: number | string; temp: number | string; rr: number | string; spo2: number | string; fio2: string } }): {
+  general: string
+  heent: string
+  neck: string
+  cv: string
+  lungs: string
+  abd: string
+  ext: string
+  neuro: string
+} {
+  const v = vitalsData.latest
+  const hrDisplay = v.hr !== '--' ? `(HR ${v.hr})` : ''
+  const bpDisplay = v.sbp !== '--' && v.dbp !== '--' ? `(BP ${v.sbp}/${v.dbp})` : ''
+  const rrDisplay = v.rr !== '--' ? `(RR ${v.rr})` : ''
+  const spo2Display = v.spo2 !== '--' ? `(SpO2 ${v.spo2}% on ${v.fio2})` : ''
+  const tempDisplay = v.temp !== '--' ? `(Temp ${v.temp}°F)` : ''
+
+  return {
+    general: 'Alert, oriented, no acute distress',
+    heent: 'NCAT, PERRL, EOMI, MMM, oropharynx clear',
+    neck: 'Supple, no LAD, no JVD',
+    cv: `RRR, S1/S2, no murmurs/rubs/gallops ${hrDisplay} ${bpDisplay}`.trim(),
+    lungs: `CTAB, no wheezes/rales/rhonchi ${rrDisplay} ${spo2Display}`.trim(),
+    abd: 'Soft, NT, ND, +BS, no HSM',
+    ext: `No edema, 2+ pulses, warm and well perfused ${tempDisplay}`.trim(),
+    neuro: 'A&Ox3, CN II-XII intact, 5/5 strength, sensation intact',
+  }
+}
+
 // Fallback mock vitals (only used if no FHIR data)
 const defaultVitalsData = {
   latest: { time: 'Now', hr: '--', sbp: '--', dbp: '--', map: '--', temp: '--', rr: '--', spo2: '--', fio2: 'RA' },
@@ -1451,20 +1481,41 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
     setCustomBlocks(prev => prev.filter(b => b.id !== id))
   }
 
+  // Generate physical exam text for AI input
+  const getExamText = useCallback(() => {
+    return Object.entries(exam)
+      .filter(([, v]) => v && v !== '***')
+      .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+      .join('\n')
+  }, [exam])
+
+  // Prefill physical exam from vitals
+  const prefillExam = useCallback(() => {
+    if (fhirVitals.length > 0) {
+      const prefilledExam = generatePrefilledExam(vitalsData)
+      setExam(prefilledExam)
+    }
+  }, [fhirVitals.length, vitalsData])
+
   const handleGenerateAP = async () => {
     setIsGenerating(true)
     try {
-      // Use real FHIR data to generate A&P with AI
-      const patientData = {
+      // Build request with FHIR data + in-progress note content
+      const requestBody = {
+        patientId,
+        patientName: 'Patient',
         conditions: fhirConditions.map(c => ({
           name: c.code?.text || c.code?.coding?.[0]?.display || 'Unknown Condition',
+          code: c.code?.coding?.[0]?.code,
           status: c.clinicalStatus?.coding?.[0]?.code || 'active',
         })),
         labs: fhirLabs.slice(0, 20).map(l => ({
           name: l.code?.text || l.code?.coding?.[0]?.display || 'Unknown',
           value: l.valueQuantity?.value?.toString() || '',
           unit: l.valueQuantity?.unit || '',
-          interpretation: l.interpretation?.[0]?.coding?.[0]?.code || '',
+          interpretation: l.interpretation?.[0]?.coding?.[0]?.code === 'H' ? 'High' :
+            l.interpretation?.[0]?.coding?.[0]?.code === 'L' ? 'Low' : 'Normal',
+          date: l.effectiveDateTime ? new Date(l.effectiveDateTime).toLocaleDateString() : undefined,
         })),
         vitals: fhirVitals.slice(0, 10).map(v => ({
           name: v.code?.text || v.code?.coding?.[0]?.display || 'Unknown',
@@ -1473,25 +1524,58 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
         })),
         medications: inpatientMedications.map(m => ({
           name: m.medicationCodeableConcept?.text || m.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown',
-          dose: m.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value?.toString() || '',
+          dose: m.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value
+            ? `${m.dosageInstruction[0].doseAndRate[0].doseQuantity.value}${m.dosageInstruction[0].doseAndRate[0].doseQuantity.unit || ''}`
+            : '',
           frequency: m.dosageInstruction?.[0]?.timing?.code?.coding?.[0]?.display || '',
         })),
+        imaging: fhirImaging.slice(0, 5).map(i => ({
+          type: i.code?.text || i.code?.coding?.[0]?.display || 'Study',
+          date: i.effectiveDateTime ? new Date(i.effectiveDateTime).toLocaleDateString() : 'Recent',
+          finding: i.conclusion || 'No findings documented',
+        })),
+        // Include in-progress note content for comprehensive A&P generation
+        inProgressNote: {
+          subjective: subjective && subjective !== '***' ? subjective : undefined,
+          physicalExam: getExamText() || undefined,
+        },
       }
 
-      const response = await fetch('/api/ai/clinical-summary', {
+      // Call the new two-stage A&P generator
+      const response = await fetch('/api/ai/ap-generator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientName: 'Patient', ...patientData }),
+        body: JSON.stringify(requestBody),
       })
 
       if (response.ok) {
-        const aiResult = await response.json()
-        // Transform AI recommendations to APRecommendation format
-        const generatedRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
-        setRecommendations(generatedRecs)
-        setExpandedProblems(new Set(generatedRecs.map(r => r.id)))
+        const result = await response.json()
+        if (result.success && result.recommendations?.length > 0) {
+          // Transform AI recommendations to match local APRecommendation format
+          const generatedRecs: APRecommendation[] = result.recommendations.map((rec: any, idx: number) => ({
+            id: rec.id || `ai-${idx}`,
+            problem: rec.problem,
+            supportingData: (rec.evidence || []).map((e: string, i: number) => ({
+              type: 'lab' as const,
+              label: `Evidence ${i + 1}`,
+              value: e,
+            })),
+            recommendations: rec.plan || [],
+            status: 'pending' as const,
+            // Store AI assessment and confidence for display
+            editedContent: rec.assessment ? `Assessment: ${rec.assessment}\n\nPlan:\n${(rec.plan || []).map((p: string) => `- ${p}`).join('\n')}` : undefined,
+          }))
+          setRecommendations(generatedRecs)
+          setExpandedProblems(new Set(generatedRecs.map(r => r.id)))
+          console.log('[A&P Generator] Successfully generated', generatedRecs.length, 'recommendations')
+        } else {
+          // Fallback to rule-based recommendations
+          const fallbackRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
+          setRecommendations(fallbackRecs)
+          setExpandedProblems(new Set(fallbackRecs.map(r => r.id)))
+        }
       } else {
-        // Fallback to rule-based recommendations if AI fails
+        // Fallback to rule-based recommendations if API fails
         const fallbackRecs = transformConditionsToAP(fhirConditions, fhirLabs, fhirVitals)
         setRecommendations(fallbackRecs)
         setExpandedProblems(new Set(fallbackRecs.map(r => r.id)))
@@ -1997,7 +2081,13 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
 
               {/* Physical Exam */}
               <div>
-                <div className="text-sm font-medium mb-2">Physical Exam</div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium">Physical Exam</div>
+                  <Button variant="outline" size="sm" onClick={prefillExam} className="h-6 text-xs">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    Prefill from Vitals
+                  </Button>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   {Object.entries(exam).map(([k, v]) => (
                     <div key={k}>
@@ -2615,8 +2705,8 @@ export function SOAPNoteEditor({ patientId, existingNote, onSave, onCancel }: SO
                             {dx.category === 'cc' && <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700">CC</Badge>}
                             {dx.category === 'hcc' && <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700">HCC</Badge>}
                             <Badge variant="outline" className={`text-[10px] ${dx.confidence === 'high' ? 'bg-green-50 text-green-700' :
-                                dx.confidence === 'moderate' ? 'bg-yellow-50 text-yellow-700' :
-                                  'bg-gray-50 text-gray-600'
+                              dx.confidence === 'moderate' ? 'bg-yellow-50 text-yellow-700' :
+                                'bg-gray-50 text-gray-600'
                               }`}>
                               {dx.confidence} confidence
                             </Badge>
