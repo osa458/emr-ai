@@ -63,6 +63,12 @@ import { CoveragePanel } from '@/components/chart/CoveragePanel'
 import { PatientStickyNote } from '@/components/patients/PatientStickyNote'
 import { EncountersPanel } from '@/components/chart/EncountersPanel'
 import Link from 'next/link'
+// CDS Components
+import { CDSAlertBanner, SepsisRiskPanel, RiskScoresPanel, CareGapsPanel } from '@/components/cds'
+import { useDrugInteractions } from '@/hooks/useDrugInteractions'
+import { useSepsisRisk } from '@/hooks/useSepsisRisk'
+import { useRiskScores } from '@/hooks/useRiskScores'
+import { useCareGaps } from '@/hooks/useCareGaps'
 
 interface FHIRPatientChartProps {
   patient: any
@@ -208,6 +214,12 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
   const { data: coverage = [], isLoading: coverageLoading } = usePatientCoverage(patientId)
   const { data: allergies = [], isLoading: allergiesLoading } = usePatientAllergies(patientId)
 
+  // CDS Hooks
+  const { data: drugInteractions } = useDrugInteractions(patientId)
+  const { data: sepsisRisk } = useSepsisRisk(patientId)
+  const { data: riskScores } = useRiskScores(patientId)
+  const { data: careGaps } = useCareGaps(patientId)
+
   // Format data for display - filter out social determinant findings
   const formattedConditions = conditions.filter(isMedicalCondition).map(formatCondition)
   const formattedVitals = vitals.slice(0, 6).map(formatVital)
@@ -255,6 +267,36 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
   return (
     <div className="flex flex-col min-h-screen">
       <PatientStickyNote patientId={patientId} />
+
+      {/* CDS Alert Banner - Shows critical alerts at top */}
+      {(drugInteractions?.hasInteractions || drugInteractions?.hasAllergyAlerts ||
+        sepsisRisk?.overallRisk === 'high' || sepsisRisk?.overallRisk === 'critical') && (
+          <CDSAlertBanner
+            alerts={[
+              ...(drugInteractions?.allergyAlerts?.length ? [{
+                id: 'allergy',
+                type: 'allergy' as const,
+                severity: 'high' as const,
+                title: `${drugInteractions.allergyAlerts.length} Allergy Alert${drugInteractions.allergyAlerts.length > 1 ? 's' : ''}`
+              }] : []),
+              ...(drugInteractions?.drugInteractions?.length ? [{
+                id: 'drug-interaction',
+                type: 'drug-interaction' as const,
+                severity: drugInteractions.drugInteractions.some(d => d.severity === 'major' || d.severity === 'contraindicated') ? 'high' as const : 'moderate' as const,
+                title: `${drugInteractions.drugInteractions.length} Drug Interaction${drugInteractions.drugInteractions.length > 1 ? 's' : ''}`
+              }] : []),
+              ...(sepsisRisk?.overallRisk === 'high' || sepsisRisk?.overallRisk === 'critical' ? [{
+                id: 'sepsis',
+                type: 'sepsis' as const,
+                severity: sepsisRisk.overallRisk === 'critical' ? 'critical' as const : 'high' as const,
+                title: `Sepsis Risk: ${sepsisRisk.overallRisk.toUpperCase()}`
+              }] : [])
+            ]}
+            patientId={patientId}
+            className="mx-4 mt-2"
+          />
+        )}
+
       {/* Sticky Top Navigation Bar - Mobile Responsive */}
       <div className="sticky top-0 z-50 bg-slate-900 text-white px-2 sm:px-4 py-2 shadow-md">
         <div className="flex items-center justify-between">
@@ -572,8 +614,9 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
 
           {/* Main Tabs - Mobile Responsive */}
           <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="flex flex-wrap h-auto gap-1 p-1 sm:grid sm:grid-cols-4 md:grid-cols-8">
+            <TabsList className="flex flex-wrap h-auto gap-1 p-1 sm:grid sm:grid-cols-5 md:grid-cols-10">
               <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="cds" className="text-xs sm:text-sm bg-purple-50">CDS</TabsTrigger>
               <TabsTrigger value="encounters" className="text-xs sm:text-sm">Encounters</TabsTrigger>
               <TabsTrigger value="labs" className="text-xs sm:text-sm">Labs</TabsTrigger>
               <TabsTrigger value="medications" className="text-xs sm:text-sm">Meds</TabsTrigger>
@@ -708,6 +751,15 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
               </div>
             </TabsContent>
 
+            {/* CDS Tab */}
+            <TabsContent value="cds" className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {sepsisRisk && <SepsisRiskPanel data={sepsisRisk} />}
+                {riskScores && <RiskScoresPanel data={riskScores} />}
+              </div>
+              {careGaps && <CareGapsPanel data={careGaps} />}
+            </TabsContent>
+
             <TabsContent value="encounters">
               <EncountersPanel patientId={patientId} />
             </TabsContent>
@@ -721,6 +773,7 @@ export function FHIRPatientChart({ patient, patientId }: FHIRPatientChartProps) 
 
             <TabsContent value="medications">
               <MedicationsPanel
+                patientId={patientId}
                 inpatientMedications={medications.inpatientMedications}
                 homeMedications={medications.homeMedications}
               />

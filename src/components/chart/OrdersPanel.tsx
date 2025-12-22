@@ -26,10 +26,13 @@ import {
   Edit,
   History,
   Loader2,
+  Sparkles,
 } from 'lucide-react'
 import type { MedicationRequest, ServiceRequest } from '@medplum/fhirtypes'
 import { usePatientMedicationRequests, usePatientOrders } from '@/hooks/useFHIRData'
 import { useOrderSets, fallbackOrderSets, fallbackSingleOrders, type OrderSet, type OrderSetItem, type SingleOrder } from '@/hooks/useOrderSets'
+import { useMedicationSearch, orderMedication, type MedicationSearchResult } from '@/hooks/useMedicationSearch'
+import { useOrderSuggestions, type OrderSuggestion } from '@/hooks/useOrderSuggestions'
 
 // Local types
 interface PendingOrder {
@@ -54,6 +57,10 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([])
   const [submittedOrders, setSubmittedOrders] = useState<PendingOrder[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Labs', 'Medications']))
+  const [selectedMedication, setSelectedMedication] = useState<MedicationSearchResult | null>(null)
+  const [medDosage, setMedDosage] = useState('')
+  const [medFrequency, setMedFrequency] = useState('')
+  const [orderingMed, setOrderingMed] = useState(false)
 
   // Fetch order sets from FHIR ActivityDefinitions
   const {
@@ -71,6 +78,12 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
 
   // Single orders (use fallback for now, could be fetched from FHIR Catalog in future)
   const singleOrders = fallbackSingleOrders
+
+  // Medication search hook
+  const { query: medQuery, setQuery: setMedQuery, medications, isLoading: medSearchLoading } = useMedicationSearch()
+
+  // AI order suggestions
+  const { data: suggestionsData, isLoading: suggestionsLoading } = useOrderSuggestions(patientId)
 
   // FHIR-backed active medication orders (MedicationRequest)
   const {
@@ -213,9 +226,15 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
             </div>
 
             <Tabs defaultValue="sets" className="w-full">
-              <TabsList className="w-full">
-                <TabsTrigger value="sets" className="flex-1">Order Sets</TabsTrigger>
-                <TabsTrigger value="single" className="flex-1">Single Orders</TabsTrigger>
+              <TabsList className="w-full grid grid-cols-4">
+                <TabsTrigger value="sets">Order Sets</TabsTrigger>
+                <TabsTrigger value="single">Single</TabsTrigger>
+                <TabsTrigger value="meds" className="flex items-center gap-1">
+                  <Pill className="h-3 w-3" /> Meds
+                </TabsTrigger>
+                <TabsTrigger value="ai" className="flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> AI
+                </TabsTrigger>
               </TabsList>
 
               {/* Order Sets Tab */}
@@ -314,6 +333,216 @@ export function OrdersPanel({ patientId }: OrdersPanelProps) {
                     </div>
                   )
                 })}
+              </TabsContent>
+
+              {/* Medications Tab - Real Database Search */}
+              <TabsContent value="meds" className="mt-4 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    className="w-full pl-9 pr-3 py-2 border rounded-md text-sm"
+                    placeholder="Search 135k+ medications by name, NDC, or RxNorm..."
+                    value={medQuery}
+                    onChange={e => setMedQuery(e.target.value)}
+                  />
+                </div>
+
+                {medSearchLoading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching medications...
+                  </div>
+                )}
+
+                {!medSearchLoading && medications.length > 0 && (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {medications.map(med => (
+                      <button
+                        key={med.id}
+                        onClick={() => setSelectedMedication(med)}
+                        className={`w-full p-3 border rounded-lg text-left hover:bg-blue-50 transition-colors ${selectedMedication?.id === med.id ? 'bg-blue-100 border-blue-400' : ''
+                          }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium text-sm">{med.name}</div>
+                          {med.rxnorm && (
+                            <Badge variant="outline" className="text-[9px]">RxNorm</Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {med.form && <span>{med.form} • </span>}
+                          NDC: {med.ndc}
+                          {med.manufacturer && <span> • {med.manufacturer}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!medSearchLoading && medQuery.length >= 2 && medications.length === 0 && (
+                  <div className="text-sm text-muted-foreground text-center py-4">
+                    No medications found matching "{medQuery}"
+                  </div>
+                )}
+
+                {/* Selected Medication Order Form */}
+                {selectedMedication && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{selectedMedication.name}</div>
+                        <div className="text-xs text-muted-foreground">{selectedMedication.form}</div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedMedication(null)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-medium">Dosage</label>
+                        <input
+                          type="text"
+                          className="w-full px-2 py-1 border rounded text-sm"
+                          placeholder="e.g., 500mg"
+                          value={medDosage}
+                          onChange={e => setMedDosage(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Frequency</label>
+                        <select
+                          className="w-full px-2 py-1 border rounded text-sm"
+                          value={medFrequency}
+                          onChange={e => setMedFrequency(e.target.value)}
+                        >
+                          <option value="">Select...</option>
+                          <option value="daily">Daily</option>
+                          <option value="BID">BID (twice daily)</option>
+                          <option value="TID">TID (three times)</option>
+                          <option value="QID">QID (four times)</option>
+                          <option value="QHS">QHS (at bedtime)</option>
+                          <option value="PRN">PRN (as needed)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full"
+                      disabled={!medDosage || !medFrequency || orderingMed}
+                      onClick={async () => {
+                        setOrderingMed(true)
+                        try {
+                          const result = await orderMedication({
+                            patientId,
+                            medicationId: selectedMedication.id,
+                            medicationName: selectedMedication.name,
+                            dosage: medDosage,
+                            frequency: medFrequency,
+                          })
+                          if (result.success) {
+                            setPendingOrders(prev => [...prev, {
+                              id: result.medicationRequestId || `med-${Date.now()}`,
+                              name: `${selectedMedication.name} ${medDosage} ${medFrequency}`,
+                              category: 'Medications',
+                              source: 'single',
+                              status: 'pending',
+                              addedAt: new Date()
+                            }])
+                            setSelectedMedication(null)
+                            setMedDosage('')
+                            setMedFrequency('')
+                            setMedQuery('')
+                          }
+                        } finally {
+                          setOrderingMed(false)
+                        }
+                      }}
+                    >
+                      {orderingMed ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4 mr-2" />
+                      )}
+                      Order Medication
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* AI Suggestions Tab */}
+              <TabsContent value="ai" className="mt-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="h-4 w-4 text-purple-500" />
+                  <span className="font-medium text-sm">AI-Suggested Orders</span>
+                  {suggestionsLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                </div>
+
+                {suggestionsLoading && (
+                  <div className="text-sm text-muted-foreground py-4 text-center">
+                    Analyzing patient data for order suggestions...
+                  </div>
+                )}
+
+                {!suggestionsLoading && suggestionsData?.suggestions && suggestionsData.suggestions.length > 0 && (
+                  <div className="space-y-2">
+                    {suggestionsData.suggestions.map((suggestion: OrderSuggestion) => (
+                      <div
+                        key={suggestion.id}
+                        className="p-3 border rounded-lg hover:bg-purple-50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          // Add to pending orders
+                          setPendingOrders(prev => [...prev, {
+                            id: `ai-${suggestion.id}-${Date.now()}`,
+                            name: suggestion.name,
+                            category: suggestion.category,
+                            source: 'single',
+                            status: 'pending',
+                            addedAt: new Date()
+                          }])
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {suggestion.category === 'Labs' && <FlaskConical className="h-4 w-4" />}
+                            {suggestion.category === 'Imaging' && <ImageIcon className="h-4 w-4" />}
+                            {suggestion.category === 'Medications' && <Pill className="h-4 w-4" />}
+                            {suggestion.category === 'Consults' && <Stethoscope className="h-4 w-4" />}
+                            {suggestion.category === 'Procedures' && <Syringe className="h-4 w-4" />}
+                            <span className="font-medium text-sm">{suggestion.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Badge
+                              variant={suggestion.priority === 'stat' ? 'destructive' : suggestion.priority === 'urgent' ? 'default' : 'secondary'}
+                              className="text-[9px]"
+                            >
+                              {suggestion.priority}
+                            </Badge>
+                            <Badge variant="outline" className="text-[9px]">
+                              {Math.round(suggestion.aiConfidence * 100)}%
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {suggestion.reason}
+                        </div>
+                        {suggestion.evidence && suggestion.evidence.length > 0 && (
+                          <div className="text-[10px] text-blue-600 mt-1">
+                            Evidence: {suggestion.evidence.slice(0, 2).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!suggestionsLoading && (!suggestionsData?.suggestions || suggestionsData.suggestions.length === 0) && (
+                  <div className="text-sm text-muted-foreground text-center py-4 border rounded-lg">
+                    <Sparkles className="h-6 w-6 mx-auto mb-2 text-purple-300" />
+                    No AI suggestions at this time.
+                    <br />
+                    <span className="text-xs">Suggestions are generated based on patient conditions and recent data.</span>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
 

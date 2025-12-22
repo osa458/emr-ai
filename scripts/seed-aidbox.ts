@@ -23,6 +23,7 @@ import type {
   MedicationStatement,
   Appointment,
   ServiceRequest,
+  AllergyIntolerance,
 } from '@medplum/fhirtypes'
 
 const BASE_URL = process.env.AIDBOX_BASE_URL || 'https://aoadhslfxc.edge.aidbox.app'
@@ -168,6 +169,11 @@ async function seed() {
     for (const order of makeServiceRequests(patientData, patient.id!, encounter.id!)) {
       await fhirCreate<ServiceRequest>(order)
     }
+
+    // Create allergies for specific patients (for CDS testing)
+    for (const allergy of makeAllergies(patientData, patient.id!)) {
+      await fhirCreate<AllergyIntolerance>(allergy)
+    }
   }
   console.log('Seeding complete.')
 }
@@ -187,16 +193,20 @@ type PatientSeed = {
 }
 
 const patients: PatientSeed[] = [
-  { first: 'Robert', last: 'Johnson', birthDate: '1945-11-30', gender: 'male', mrn: 'MRN-001', address: '123 Main St', location: 'Room 412', admitDate: isoDaysAgo(6), reason: 'Acute Kidney Injury', meds: ['Lisinopril 10mg', 'Furosemide 40mg'], pendingTests: ['Renal ultrasound'] },
+  { first: 'Robert', last: 'Johnson', birthDate: '1945-11-30', gender: 'male', mrn: 'MRN-001', address: '123 Main St', location: 'Room 412', admitDate: isoDaysAgo(6), reason: 'Acute Kidney Injury', meds: ['Lisinopril 10mg', 'Furosemide 40mg', 'Potassium 20 mEq'], pendingTests: ['Renal ultrasound'] }, // Lisinopril + Potassium = moderate interaction
   { first: 'Sarah', last: 'Williams', birthDate: '1965-05-10', gender: 'female', mrn: 'MRN-002', address: '456 Oak Ave', location: 'Room 305', admitDate: isoDaysAgo(5), reason: 'COPD Exacerbation', meds: ['Albuterol neb', 'Prednisone 40mg'], pendingTests: ['CT Chest'] },
   { first: 'John', last: 'Smith', birthDate: '1959-03-15', gender: 'male', mrn: 'MRN-003', address: '789 Pine Rd', location: 'Room 218', admitDate: isoDaysAgo(4), reason: 'CHF Exacerbation', meds: ['Furosemide drip', 'Metoprolol 25mg'], pendingTests: ['Echocardiogram'] },
   { first: 'Maria', last: 'Garcia', birthDate: '1972-08-22', gender: 'female', mrn: 'MRN-004', address: '222 Elm St', location: 'Room 422', admitDate: isoDaysAgo(3), reason: 'Community Acquired Pneumonia', meds: ['Ceftriaxone', 'Azithromycin'] },
-  { first: 'Michael', last: 'Brown', birthDate: '1980-01-25', gender: 'male', mrn: 'MRN-005', address: '334 Cedar Ln', location: 'Room 108', admitDate: isoDaysAgo(2), reason: 'Cellulitis', meds: ['Vancomycin'] },
+  { first: 'Michael', last: 'Brown', birthDate: '1980-01-25', gender: 'male', mrn: 'MRN-005', address: '334 Cedar Ln', location: 'Room 108', admitDate: isoDaysAgo(2), reason: 'Cellulitis', meds: ['Vancomycin', 'Amoxicillin 500mg'] }, // Has penicillin allergy - cross-reactivity test
   { first: 'Patricia', last: 'Davis', birthDate: '1978-02-14', gender: 'female', mrn: 'MRN-006', address: '55 Maple Ct', location: 'Room 315', admitDate: isoDaysAgo(5), reason: 'Atrial Fibrillation', meds: ['Eliquis 5mg', 'Metoprolol 50mg'] },
   { first: 'James', last: 'Wilson', birthDate: '1968-07-19', gender: 'male', mrn: 'MRN-007', address: '88 Lake Dr', location: 'Room 210', admitDate: isoDaysAgo(4), reason: 'Diabetic Ketoacidosis', meds: ['Insulin drip', 'Fluids'] },
   { first: 'Jennifer', last: 'Martinez', birthDate: '1974-09-03', gender: 'female', mrn: 'MRN-008', address: '990 Birch Pl', location: 'Room 405', admitDate: isoDaysAgo(3), reason: 'Acute Pancreatitis', meds: ['Fluids', 'Pain control'] },
   { first: 'William', last: 'Anderson', birthDate: '1940-12-12', gender: 'male', mrn: 'MRN-009', address: '12 Oak Cir', location: 'Room 512', admitDate: isoDaysAgo(7), reason: 'Hip Fracture Post-Op', meds: ['Enoxaparin', 'Analgesics'], pendingTests: ['Physical therapy eval'] },
   { first: 'Elizabeth', last: 'Taylor', birthDate: '1957-04-05', gender: 'female', mrn: 'MRN-010', address: '77 Walnut St', location: 'Room 320', admitDate: isoDaysAgo(4), reason: 'GI Bleed', meds: ['PPI infusion'] },
+  // CDS Test Patient: Thomas Grant - warfarin + aspirin (major interaction) + penicillin allergy
+  { first: 'Thomas', last: 'Grant', birthDate: '1950-03-18', gender: 'male', mrn: 'MRN-011', address: '145 River Rd', location: 'Room 401', admitDate: isoDaysAgo(3), reason: 'Deep Vein Thrombosis', meds: ['Warfarin 5mg', 'Aspirin 81mg', 'Simvastatin 40mg', 'Amiodarone 200mg'] }, // Warfarin+Aspirin=major, Simvastatin+Amiodarone=major
+  // Sepsis Test Patient: Susan Reed - elevated HR/RR, low BP for sepsis detection
+  { first: 'Susan', last: 'Reed', birthDate: '1962-09-15', gender: 'female', mrn: 'MRN-012', address: '88 Pine St', location: 'ICU Bed 3', admitDate: isoDaysAgo(1), reason: 'Urosepsis', meds: ['Vancomycin', 'Piperacillin-tazobactam', 'Norepinephrine drip'] }, // Will have septic vitals
 ]
 
 function isoDaysAgo(days: number) {
@@ -206,6 +216,18 @@ function isoDaysAgo(days: number) {
 }
 
 function makeVitals(p: PatientSeed) {
+  // Generate septic vitals for the Urosepsis test patient
+  if (p.reason === 'Urosepsis') {
+    return [
+      { name: 'Heart Rate', code: '8867-4', value: 118, unit: '/min' },           // Tachycardia
+      { name: 'Respiratory Rate', code: '9279-1', value: 26, unit: '/min' },      // Tachypnea (qSOFA criteria)
+      { name: 'Systolic BP', code: '8480-6', value: 88, unit: 'mmHg' },           // Hypotensive (qSOFA criteria)
+      { name: 'Diastolic BP', code: '8462-4', value: 52, unit: 'mmHg' },
+      { name: 'Oxygen Saturation', code: '2708-6', value: 92, unit: '%' },        // Low SpO2
+      { name: 'Temperature', code: '8310-5', value: 102.8, unit: 'F' },           // Fever (SIRS criteria)
+    ]
+  }
+
   return [
     { name: 'Heart Rate', code: '8867-4', value: rand(68, 98), unit: '/min' },
     { name: 'Respiratory Rate', code: '9279-1', value: rand(14, 22), unit: '/min' },
@@ -899,6 +921,68 @@ function makeServiceRequests(p: PatientSeed, patientId: string, encounterId: str
   }
 
   return orders
+}
+
+// Generate allergies for CDS testing
+function makeAllergies(p: PatientSeed, patientId: string): AllergyIntolerance[] {
+  const allergies: AllergyIntolerance[] = []
+
+  // Michael Brown (MRN-005) and Thomas Grant (MRN-011) have penicillin allergy
+  // This will trigger cross-reactivity alert when they receive Amoxicillin
+  if (p.mrn === 'MRN-005' || p.mrn === 'MRN-011') {
+    allergies.push({
+      resourceType: 'AllergyIntolerance',
+      clinicalStatus: {
+        coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: 'active', display: 'Active' }]
+      },
+      verificationStatus: {
+        coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: 'confirmed', display: 'Confirmed' }]
+      },
+      type: 'allergy',
+      category: ['medication'],
+      criticality: 'high',
+      code: {
+        coding: [{ system: 'http://www.nlm.nih.gov/research/umls/rxnorm', code: '70618', display: 'Penicillin' }],
+        text: 'Penicillin'
+      },
+      patient: { reference: `Patient/${patientId}` },
+      recordedDate: new Date().toISOString(),
+      reaction: [{
+        manifestation: [{ coding: [{ display: 'Anaphylaxis' }], text: 'Anaphylaxis' }],
+        severity: 'severe',
+        description: 'Severe allergic reaction requiring epinephrine'
+      }]
+    })
+  }
+
+  // Robert Johnson (MRN-001) has sulfa allergy (for future testing)
+  if (p.mrn === 'MRN-001') {
+    allergies.push({
+      resourceType: 'AllergyIntolerance',
+      clinicalStatus: {
+        coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical', code: 'active', display: 'Active' }]
+      },
+      verificationStatus: {
+        coding: [{ system: 'http://terminology.hl7.org/CodeSystem/allergyintolerance-verification', code: 'confirmed', display: 'Confirmed' }]
+      },
+      type: 'allergy',
+      category: ['medication'],
+      criticality: 'low',
+      code: {
+        coding: [{ system: 'http://www.nlm.nih.gov/research/umls/rxnorm', code: '10831', display: 'Sulfa' }],
+        text: 'Sulfa'
+      },
+      patient: { reference: `Patient/${patientId}` },
+      recordedDate: new Date().toISOString(),
+      reaction: [{
+        manifestation: [{ coding: [{ display: 'Rash' }], text: 'Rash' }],
+        severity: 'mild',
+        description: 'Skin rash with sulfa medications'
+      }]
+    })
+  }
+
+  return allergies
 }
 
 seed().catch((err) => {

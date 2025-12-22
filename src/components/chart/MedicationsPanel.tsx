@@ -22,10 +22,14 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  Shield,
 } from 'lucide-react'
 import type { MedicationRequest, MedicationStatement } from '@medplum/fhirtypes'
+import { useDrugInteractions } from '@/hooks/useDrugInteractions'
+import { DrugInteractionAlert } from '@/components/cds/DrugInteractionAlert'
 
 interface MedicationsPanelProps {
+  patientId?: string
   inpatientMedications: MedicationRequest[]
   homeMedications: MedicationStatement[]
   isLoading?: boolean
@@ -106,11 +110,15 @@ function parseMedicationStatement(med: MedicationStatement): MedicationDisplay {
 }
 
 export function MedicationsPanel({
+  patientId,
   inpatientMedications,
   homeMedications,
   isLoading
 }: MedicationsPanelProps) {
   const [activeTab, setActiveTab] = useState<'inpatient' | 'home' | 'comparison'>('inpatient')
+
+  // Fetch drug interactions for this patient
+  const { data: interactionData } = useDrugInteractions(patientId)
 
   const parsedInpatient = inpatientMedications.map(parseMedicationRequest)
   const parsedHome = homeMedications.map(parseMedicationStatement)
@@ -152,12 +160,29 @@ export function MedicationsPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Pill className="h-5 w-5" />
-          Medications
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Pill className="h-5 w-5" />
+            Medications
+          </CardTitle>
+          {/* Drug Interaction Warning Badge */}
+          {interactionData && (interactionData.hasInteractions || interactionData.hasAllergyAlerts) && (
+            <Badge variant="destructive" className="flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              {(interactionData.drugInteractions?.length || 0) + (interactionData.allergyAlerts?.length || 0)} Alert{((interactionData.drugInteractions?.length || 0) + (interactionData.allergyAlerts?.length || 0)) !== 1 ? 's' : ''}
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
+        {/* Drug Interaction Alerts */}
+        {interactionData && (interactionData.hasInteractions || interactionData.hasAllergyAlerts) && (
+          <DrugInteractionAlert
+            interactions={interactionData.drugInteractions || []}
+            allergyAlerts={interactionData.allergyAlerts || []}
+          />
+        )}
+
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
           <TabsList className="grid grid-cols-3 w-full max-w-md">
             <TabsTrigger value="inpatient" className="flex items-center gap-1">
